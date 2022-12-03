@@ -25,6 +25,7 @@ public extension StableDiffusionPipeline {
         let unetURL = baseURL.appending(path: "Unet.mlmodelc")
         let unetChunk1URL = baseURL.appending(path: "UnetChunk1.mlmodelc")
         let unetChunk2URL = baseURL.appending(path: "UnetChunk2.mlmodelc")
+        let encoderURL = baseURL.appending(path: "VAEEncoder.mlmodelc")
         let decoderURL = baseURL.appending(path: "VAEDecoder.mlmodelc")
         let safetyCheckerURL = baseURL.appending(path: "SafetyChecker.mlmodelc")
         let vocabURL = baseURL.appending(path: "vocab.json")
@@ -46,7 +47,11 @@ public extension StableDiffusionPipeline {
             let unetModel =  try MLModel(contentsOf: unetURL, configuration: config)
             unet = Unet(model: unetModel)
         }
-
+        
+        // Image Encoder
+        let encoderModel = try MLModel(contentsOf: encoderURL, configuration: config)
+        let encoder = Encoder(model: encoderModel)
+        
         // Image Decoder
         let decoderModel = try MLModel(contentsOf: decoderURL, configuration: config)
         let decoder = Decoder(model: decoderModel)
@@ -62,6 +67,7 @@ public extension StableDiffusionPipeline {
         // Construct pipelien
         self.init(textEncoder: textEncoder,
                   unet: unet,
+                  encoder: encoder,
                   decoder: decoder,
                   safetyChecker: safetyChecker)
     }
