@@ -453,6 +453,90 @@ def convert_vae_decoder(pipe, args):
     gc.collect()
 
 
+def convert_vae_encoder(pipe, args):
+    """ Converts the VAE Encoder component of Stable Diffusion
+    """
+    out_path = _get_out_path(args, "vae_encoder2")
+    if os.path.exists(out_path):
+        logger.info(
+            f"`vae_encoder` already exists at {out_path}, skipping conversion."
+        )
+        return
+
+    if not hasattr(pipe, "unet"):
+        raise RuntimeError(
+            "convert_unet() deletes pipe.unet to save RAM. "
+            "Please use convert_vae_encoder() before convert_unet()")
+
+    z_shape = (
+        1,  # B
+        3,  # C
+        512,  # H
+        512,  # w
+    )
+
+    sample_vae_encoder_inputs = {
+        "z": torch.rand(*z_shape, dtype=torch.float16)
+    }
+
+    class VAEEncoder(nn.Module):
+        """ Wrapper nn.Module wrapper for pipe.encode() method
+        """
+
+        def __init__(self):
+            super().__init__()
+            self.quant_conv = pipe.vae.quant_conv
+            self.encoder = pipe.vae.encoder
+
+        def forward(self, z):
+            return self.quant_conv(self.encoder(z))
+
+    baseline_encoder = VAEEncoder().eval()
+
+    # No optimization needed for the VAE Encoder as it is a pure ConvNet
+    traced_vae_encoder = torch.jit.trace(
+        baseline_encoder, (sample_vae_encoder_inputs["z"].to(torch.float32), ))
+
+    modify_coremltools_torch_frontend_badbmm()
+    coreml_vae_encoder, out_path = _convert_to_coreml(
+        "vae_encoder", traced_vae_encoder, sample_vae_encoder_inputs,
+        ["latent"], args)
+
+    # Set model metadata
+    coreml_vae_encoder.author = f"Please refer to the Model Card available at huggingface.co/{args.model_version}"
+    coreml_vae_encoder.license = "OpenRAIL (https://huggingface.co/spaces/CompVis/stable-diffusion-license)"
+    coreml_vae_encoder.version = args.model_version
+    coreml_vae_encoder.short_description = \
+        "Stable Diffusion generates images conditioned on text and/or other images as input through the diffusion process. " \
+        "Please refer to https://arxiv.org/abs/2112.10752 for details."
+
+    # Set the input descriptions
+    coreml_vae_encoder.input_description["z"] = \
+        "The input image to base the initial latents on normalized to range [-1, 1]"
+
+    # Set the output descriptions
+    coreml_vae_encoder.output_description[
+        "latent"] = "Encoded latent"
+
+    _save_mlpackage(coreml_vae_encoder, out_path)
+
+    logger.info(f"Saved vae_encoder into {out_path}")
+
+    # Parity check PyTorch vs CoreML
+    if args.check_output_correctness:
+        baseline_out = baseline_encoder(
+            z=sample_vae_encoder_inputs["z"].to(torch.float32)).numpy()
+        coreml_out = list(
+            coreml_vae_encoder.predict(
+                {k: v.numpy()
+                 for k, v in sample_vae_encoder_inputs.items()}).values())[0]
+        report_correctness(baseline_out, coreml_out,
+                           "vae_encoder baseline PyTorch to baseline CoreML")
+
+    del traced_vae_encoder, pipe.vae.encoder, coreml_vae_encoder
+    gc.collect()
+
+
 def convert_unet(pipe, args):
     """ Converts the UNet component of Stable Diffusion
     """
@@ -801,6 +885,11 @@ def main(args):
         logger.info("Converting vae_decoder")
         convert_vae_decoder(pipe, args)
         logger.info("Converted vae_decoder")
+    
+    if args.convert_vae_encoder:
+        logger.info("Converting vae_encoder")
+        convert_vae_encoder(pipe, args)
+        logger.info("Converted vae_encoder")
 
     if args.convert_unet:
         logger.info("Converting unet")
@@ -835,6 +924,7 @@ def parser_spec():
     # Select which models to export (All are needed for text-to-image pipeline to function)
     parser.add_argument("--convert-text-encoder", action="store_true")
     parser.add_argument("--convert-vae-decoder", action="store_true")
+    parser.add_argument("--convert-vae-encoder", action="store_true")
     parser.add_argument("--convert-unet", action="store_true")
     parser.add_argument("--convert-safety-checker", action="store_true")
     parser.add_argument(
