@@ -87,7 +87,17 @@ public final class Scheduler {
         self.ets = []
         self.currentSample = nil
     }
-
+    
+    func startStep(strength: Double) -> Int {
+        return Int(Double(timeSteps.count) * (1 - strength))
+    }
+    
+    public func timeSteps(strength: Double?) -> [Int] {
+        guard let strength else { return timeSteps }
+        let startStep = startStep(strength: strength)
+        return Array(timeSteps[startStep..<timeSteps.count])
+    }
+    
     /// Compute a de-noised image sample and step scheduler state
     ///
     /// - Parameters:
@@ -149,6 +159,27 @@ public final class Scheduler {
         let prevSample = previousSample(sample, timeStep, prevStep, modelOutput)
         counter += 1
         return prevSample
+    }
+    
+    public func addNoise(
+        originalSample: MLShapedArray<Float32>,
+        noise: [MLShapedArray<Float32>],
+        strength: Double
+    ) -> [MLShapedArray<Float32>] {
+        let startStep = startStep(strength: strength)
+        let alphaProdt = alphasCumProd[timeSteps[startStep]]
+        let betaProdt = 1 - alphaProdt
+        let sqrtAlphaProdt = sqrt(alphaProdt)
+        let sqrtBetaProdt = sqrt(betaProdt)
+        
+        let noisySamples = noise.map {
+            weightedSum(
+                [Double(sqrtAlphaProdt), Double(sqrtBetaProdt)],
+                [originalSample, $0]
+            )
+        }
+
+        return noisySamples
     }
 
     /// Compute weighted sum of shaped arrays of equal shapes
