@@ -86,14 +86,13 @@ public struct StableDiffusionPipeline {
         let hiddenStates = toHiddenStates(concatEmbedding)
 
         /// Setup schedulers
-        let scheduler = (0..<imageCount).map { _ in Scheduler(stepCount: input.stepCount) }
+        let scheduler = (0..<imageCount).map { _ in Scheduler(strength: input.strength, stepCount: input.stepCount) }
 
         // Generate random latent samples from specified seed
         var latents = try generateLatentSamples(imageCount, input: input, scheduler: scheduler[0])
 
         // De-noising loop
-        let actualTimesteps = scheduler[0].timeSteps(strength: input.strength)
-        for (step,t) in actualTimesteps.enumerated() {
+        for (step,t) in scheduler[0].timeSteps.enumerated() {
             // Expand the latents for classifier-free guidance
             // and input to the Unet noise prediction model
             let latentUnetInput = latents.map {
@@ -172,7 +171,7 @@ public struct StableDiffusionPipeline {
             let latent = try encoder.encode(image, random: { mean, std in
                 Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
             })
-            return scheduler.addNoise(originalSample: latent, noise: samples, strength: strength)
+            return scheduler.addNoise(originalSample: latent, noise: samples)
         }
         
         return samples

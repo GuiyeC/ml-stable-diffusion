@@ -11,7 +11,7 @@ import CoreGraphics
 public struct SampleInput: Hashable {
     public var prompt: String
     public var initImage: CGImage?
-    public var strength: Double?
+    public var strength: Float?
     public var seed: Int
     public var stepCount: Int
     /// Controls the influence of the text prompt on sampling process (0=random images)
@@ -34,7 +34,7 @@ public struct SampleInput: Hashable {
     public init(
         prompt: String,
         initImage: CGImage?,
-        strength: Double = 0.75,
+        strength: Float = 0.75,
         seed: Int = Int.random(in: 0...Int.max),
         stepCount: Int = 20,
         guidanceScale: Float = 5.0
@@ -55,7 +55,7 @@ public extension SampleInput {
     init(
         prompt: String,
         initImage: UIImage,
-        strength: Double = 0.75,
+        strength: Float = 0.75,
         seed: Int = Int.random(in: 0...Int.max),
         stepCount: Int = 50,
         guidanceScale: Float = 5.0
@@ -77,7 +77,7 @@ public extension SampleInput {
     init(
         prompt: String,
         initImage: NSImage,
-        strength: Double = 0.75,
+        strength: Float = 0.75,
         seed: Int = Int.random(in: 0...Int.max),
         stepCount: Int = 50,
         guidanceScale: Float = 5.0

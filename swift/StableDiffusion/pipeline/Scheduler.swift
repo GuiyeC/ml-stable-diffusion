@@ -46,6 +46,7 @@ public final class Scheduler {
     ///   - betaEnd: The end value for beta for inference
     /// - Returns: A scheduler ready for its first step
     public init(
+        strength: Float? = nil,
         stepCount: Int = 50,
         trainStepCount: Int = 1000,
         betaSchedule: BetaSchedule = .scaledLinear,
@@ -80,22 +81,16 @@ public final class Scheduler {
         timeSteps.append(contentsOf: forwardSteps.dropLast(1))
         timeSteps.append(timeSteps.last!)
         timeSteps.append(forwardSteps.last!)
+        if let strength {
+            let tEnc = Int(Float(timeSteps.count) * strength)
+            timeSteps = Array(timeSteps[0..<tEnc])
+        }
         timeSteps.reverse()
 
         self.timeSteps = timeSteps
         self.counter = 0
         self.ets = []
         self.currentSample = nil
-    }
-    
-    func startStep(strength: Double) -> Int {
-        return Int(Double(timeSteps.count) * (1 - strength))
-    }
-    
-    public func timeSteps(strength: Double?) -> [Int] {
-        guard let strength else { return timeSteps }
-        let startStep = startStep(strength: strength)
-        return Array(timeSteps[startStep..<timeSteps.count])
     }
     
     /// Compute a de-noised image sample and step scheduler state
@@ -163,11 +158,9 @@ public final class Scheduler {
     
     public func addNoise(
         originalSample: MLShapedArray<Float32>,
-        noise: [MLShapedArray<Float32>],
-        strength: Double
+        noise: [MLShapedArray<Float32>]
     ) -> [MLShapedArray<Float32>] {
-        let startStep = startStep(strength: strength)
-        let alphaProdt = alphasCumProd[timeSteps[startStep]]
+        let alphaProdt = alphasCumProd[timeSteps[0]]
         let betaProdt = 1 - alphaProdt
         let sqrtAlphaProdt = sqrt(alphaProdt)
         let sqrtBetaProdt = sqrt(betaProdt)
