@@ -16,8 +16,8 @@ struct StableDiffusionSample: ParsableCommand {
     )
 
     @Argument(help: "Input string prompt")
-    var prompt: String
-
+    var prompt: String = ""
+    
     @Option(
         help: ArgumentHelp(
             "Path to stable diffusion resources.",
@@ -27,13 +27,16 @@ struct StableDiffusionSample: ParsableCommand {
             valueName: "directory-path"
         )
     )
-    var resourcePath: String = "./"
+    var resourcePath: String = "./model/"
 
     @Option(help: "Number of images to sample / generate")
     var imageCount: Int = 1
-
+    
     @Option(help: "Number of diffusion steps to perform")
-    var stepCount: Int = 50
+    var stepCount: Int = 70
+    
+    @Option(help: "Indicates how much to transform the reference `image`. Must be between 0 and 1.")
+    var strength: Float = 0.75
 
     @Option(
         help: ArgumentHelp(
@@ -47,7 +50,7 @@ struct StableDiffusionSample: ParsableCommand {
     var outputPath: String = "./"
 
     @Option(help: "Random seed")
-    var seed: Int = 93
+    var seed: Int = Int.random(in: (0..<Int(UInt32.max)))
 
     @Option(help: "Compute units to load model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine}")
     var computeUnits: ComputeUnits = .all
@@ -73,29 +76,32 @@ struct StableDiffusionSample: ParsableCommand {
         log("Sampling ...\n")
         let sampleTimer = SampleTimer()
         sampleTimer.start()
-
-        let images = try pipeline.generateImages(
+        
+        let input = SampleInput(
             prompt: prompt,
-            imageCount: imageCount,
-            stepCount: stepCount,
-            seed: seed
+            seed: seed,
+            stepCount: stepCount
+        )
+        let images = try pipeline.generateImages(
+            input: input,
+            imageCount: imageCount
         ) { progress in
             sampleTimer.stop()
-            handleProgress(progress,sampleTimer)
+            handleProgress(progress, sampleTimer, input: input)
             if progress.stepCount != progress.step {
                 sampleTimer.start()
             }
             return true
         }
-
-        _ = try saveImages(images, logNames: true)
+        
+        _ = try saveImages(images, input: input, logNames: true)
     }
 
     func handleProgress(
         _ progress: StableDiffusionPipeline.Progress,
-        _ sampleTimer: SampleTimer
+        _ sampleTimer: SampleTimer,
+        input: SampleInput
     ) {
-        log("\u{1B}[1A\u{1B}[K")
         log("Step \(progress.step) of \(progress.stepCount) ")
         log(" [")
         log(String(format: "mean: %.2f, ", 1.0/sampleTimer.mean))
@@ -104,7 +110,7 @@ struct StableDiffusionSample: ParsableCommand {
         log("] step/sec")
 
         if saveEvery > 0, progress.step % saveEvery == 0 {
-            let saveCount = (try? saveImages(progress.currentImages, step: progress.step)) ?? 0
+            let saveCount = (try? saveImages(progress.currentImages, input: input, step: progress.step)) ?? 0
             log(" saved \(saveCount) image\(saveCount != 1 ? "s" : "")")
         }
         log("\n")
@@ -112,10 +118,16 @@ struct StableDiffusionSample: ParsableCommand {
 
     func saveImages(
         _ images: [CGImage?],
+        input: SampleInput,
         step: Int? = nil,
         logNames: Bool = false
     ) throws -> Int {
         let url = URL(filePath: outputPath)
+        let lastFile = try FileManager.default.contentsOfDirectory(atPath: outputPath)
+            .sorted()
+            .last?
+            .prefix(while: { $0 != "." }) ?? "-1"
+        let newFile = Int(lastFile).map { $0 + 1 } ?? 0
         var saved = 0
         for i in 0 ..< images.count {
 
@@ -125,14 +137,31 @@ struct StableDiffusionSample: ParsableCommand {
                 }
                 continue
             }
-
+            
             let name = imageName(i, step: step)
-            let fileURL = url.appending(path:name)
+            var fileURL = url.appending(path: String(format: "%05d", newFile + saved))
+            if let step = step {
+                fileURL.append(path: ".\(step)")
+            }
+            fileURL.appendPathExtension("png")
 
             guard let dest = CGImageDestinationCreateWithURL(fileURL as CFURL, UTType.png.identifier as CFString, 1, nil) else {
                 throw RunError.saving("Failed to create destination for \(fileURL)")
             }
-            CGImageDestinationAddImage(dest, image, nil)
+            let metadata = [
+                kCGImagePropertyPNGDictionary: [
+                    kCGImagePropertyPNGTitle: NSString(string: input.prompt),
+                    kCGImagePropertyPNGDescription:
+                        NSString(string: """
+                            Seed: \(input.seed)
+                            Steps: \(input.stepCount)
+                            Strength: \(input.strength?.description ?? "-")
+                            Guidance scale: \(input.guidanceScale)
+                            """),
+                    kCGImagePropertyPNGSoftware: NSString(string: "\(input.seed)\n\n\(input.prompt)"),
+                ] as CFDictionary
+            ] as CFDictionary
+            CGImageDestinationAddImage(dest, image, metadata)
             if !CGImageDestinationFinalize(dest) {
                 throw RunError.saving("Failed to save \(fileURL)")
             }
@@ -145,7 +174,7 @@ struct StableDiffusionSample: ParsableCommand {
     }
 
     func imageName(_ sample: Int, step: Int? = nil) -> String {
-        var name = prompt.replacingOccurrences(of: " ", with: "_")
+        var name = String(prompt.replacingOccurrences(of: " ", with: "_").split(separator: ",").first!)
         if imageCount != 1 {
             name += ".\(sample)"
         }

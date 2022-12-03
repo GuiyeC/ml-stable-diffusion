@@ -19,7 +19,7 @@ public struct SampleInput: Hashable {
     
     public init(
         prompt: String,
-        seed: Int = Int.random(in: 0...Int.max),
+        seed: Int = Int.random(in: 0...Int(UInt32.max)),
         stepCount: Int = 20,
         guidanceScale: Float = 7.5
     ) {
@@ -35,7 +35,7 @@ public struct SampleInput: Hashable {
         prompt: String,
         initImage: CGImage?,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int.max),
+        seed: Int = Int.random(in: 0...Int(UInt32.max)),
         stepCount: Int = 20,
         guidanceScale: Float = 5.0
     ) {
@@ -56,7 +56,7 @@ public extension SampleInput {
         prompt: String,
         initImage: UIImage,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int.max),
+        seed: Int = Int.random(in: 0...Int(UInt32.max)),
         stepCount: Int = 50,
         guidanceScale: Float = 5.0
     ) {
@@ -78,7 +78,7 @@ public extension SampleInput {
         prompt: String,
         initImage: NSImage,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int.max),
+        seed: Int = Int.random(in: 0...Int(UInt32.max)),
         stepCount: Int = 50,
         guidanceScale: Float = 5.0
     ) {
