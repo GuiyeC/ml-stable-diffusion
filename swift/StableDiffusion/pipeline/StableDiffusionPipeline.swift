@@ -17,15 +17,15 @@ public struct StableDiffusionPipeline {
 
     /// Model used to predict noise residuals given an input, diffusion time step, and conditional embedding
     var unet: Unet
-
+    
+    /// Model used to generate final image from latent diffusion process
+    var encoder: Encoder
+    
     /// Model used to generate final image from latent diffusion process
     var decoder: Decoder
 
     /// Optional model for checking safety of generated image
     var safetyChecker: SafetyChecker? = nil
-
-    /// Controls the influence of the text prompt on sampling process (0=random images)
-    var guidanceScale: Float = 7.5
 
     /// Reports whether this pipeline can perform safety checks
     public var canSafetyCheck: Bool {
@@ -41,18 +41,20 @@ public struct StableDiffusionPipeline {
     ///   - safetyChecker: Optional model for checking safety of generated images
     ///   - guidanceScale: Influence of the text prompt on generation process
     /// - Returns: Pipeline ready for image generation
-    public init(textEncoder: TextEncoder,
-                unet: Unet,
-                decoder: Decoder,
-                safetyChecker: SafetyChecker? = nil,
-                guidanceScale: Float = 7.5) {
+    public init(
+        textEncoder: TextEncoder,
+        unet: Unet,
+        encoder: Encoder,
+        decoder: Decoder,
+        safetyChecker: SafetyChecker? = nil
+    ) {
         self.textEncoder = textEncoder
         self.unet = unet
+        self.encoder = encoder
         self.decoder = decoder
         self.safetyChecker = safetyChecker
-        self.guidanceScale = guidanceScale
     }
-
+    
     /// Text to image generation using stable diffusion
     ///
     /// - Parameters:
@@ -65,16 +67,14 @@ public struct StableDiffusionPipeline {
     /// - Returns: An array of `imageCount` optional images.
     ///            The images will be nil if safety checks were performed and found the result to be un-safe
     public func generateImages(
-        prompt: String,
+        input: SampleInput,
         imageCount: Int = 1,
-        stepCount: Int = 50,
-        seed: Int = 0,
         disableSafety: Bool = false,
         progressHandler: (Progress) -> Bool = { _ in true }
     ) throws -> [CGImage?] {
-
+        let mainTick = CFAbsoluteTimeGetCurrent()
         // Encode the input prompt as well as a blank unconditioned input
-        let promptEmbedding = try textEncoder.encode(prompt)
+        let promptEmbedding = try textEncoder.encode(input.prompt)
         let blankEmbedding = try textEncoder.encode("")
 
         // Convert to Unet hidden state representation
@@ -86,15 +86,14 @@ public struct StableDiffusionPipeline {
         let hiddenStates = toHiddenStates(concatEmbedding)
 
         /// Setup schedulers
-        let scheduler = (0..<imageCount).map { _ in Scheduler(stepCount: stepCount) }
-        let stdev = scheduler[0].initNoiseSigma
+        let scheduler = (0..<imageCount).map { _ in Scheduler(stepCount: input.stepCount) }
 
         // Generate random latent samples from specified seed
-        var latents = generateLatentSamples(imageCount, stdev: stdev, seed: seed)
+        var latents = try generateLatentSamples(imageCount, input: input, scheduler: scheduler[0])
 
         // De-noising loop
-        for (step,t) in scheduler[0].timeSteps.enumerated() {
-
+        let actualTimesteps = scheduler[0].timeSteps(strength: input.strength)
+        for (step,t) in actualTimesteps.enumerated() {
             // Expand the latents for classifier-free guidance
             // and input to the Unet noise prediction model
             let latentUnetInput = latents.map {
@@ -109,7 +108,7 @@ public struct StableDiffusionPipeline {
                 hiddenStates: hiddenStates
             )
 
-            noise = performGuidance(noise)
+            noise = performGuidance(noise, guidanceScale: input.guidanceScale)
 
             // Have the scheduler compute the previous (t-1) latent
             // sample given the predicted noise and current sample
@@ -124,9 +123,9 @@ public struct StableDiffusionPipeline {
             // Report progress
             let progress = Progress(
                 pipeline: self,
-                prompt: prompt,
+                prompt: input.prompt,
                 step: step,
-                stepCount: stepCount,
+                stepCount: scheduler[0].timeSteps.count,
                 currentLatentSamples: latents,
                 isSafetyEnabled: canSafetyCheck && !disableSafety
             )
@@ -137,9 +136,15 @@ public struct StableDiffusionPipeline {
         }
 
         // Decode the latent samples to images
-        return try decodeToImages(latents, disableSafety: disableSafety)
+        let images = try decodeToImages(latents, disableSafety: disableSafety)
+        
+        let mainTock = CFAbsoluteTimeGetCurrent()
+        let runtime = String(format:"%.2fs", mainTock - mainTick)
+        print("Time", runtime)
+        
+        return images
     }
-
+    
     func generateLatentSamples(_ count: Int, stdev: Float, seed: Int) -> [MLShapedArray<Float32>] {
         var sampleShape = unet.latentSampleShape
         sampleShape[0] = 1
@@ -149,6 +154,27 @@ public struct StableDiffusionPipeline {
             MLShapedArray<Float32>(
                 converting: random.normalShapedArray(sampleShape, mean: 0.0, stdev: Double(stdev)))
         }
+        
+        return samples
+    }
+    
+    func generateLatentSamples(_ count: Int, input: SampleInput, scheduler: Scheduler) throws -> [MLShapedArray<Float32>] {
+        var sampleShape = unet.latentSampleShape
+        sampleShape[0] = 1
+        
+        let stdev = scheduler.initNoiseSigma
+        var random = NumPyRandomSource(seed: UInt32(input.seed))
+        let samples = (0..<count).map { _ in
+            MLShapedArray<Float32>(
+                converting: random.normalShapedArray(sampleShape, mean: 0.0, stdev: Double(stdev)))
+        }
+        if let image = input.initImage, let strength = input.strength {
+            let latent = try encoder.encode(image, random: { mean, std in
+                Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
+            })
+            return scheduler.addNoise(originalSample: latent, noise: samples, strength: strength)
+        }
+        
         return samples
     }
 
@@ -168,16 +194,16 @@ public struct StableDiffusionPipeline {
         return states
     }
 
-    func performGuidance(_ noise: [MLShapedArray<Float32>]) -> [MLShapedArray<Float32>] {
-        noise.map { performGuidance($0) }
+    func performGuidance(_ noise: [MLShapedArray<Float32>], guidanceScale: Float) -> [MLShapedArray<Float32>] {
+        noise.map { performGuidance($0, guidanceScale: guidanceScale) }
     }
 
-    func performGuidance(_ noise: MLShapedArray<Float32>) -> MLShapedArray<Float32> {
+    func performGuidance(_ noise: MLShapedArray<Float32>, guidanceScale: Float) -> MLShapedArray<Float32> {
 
         let blankNoiseScalars = noise[0].scalars
         let textNoiseScalars = noise[1].scalars
 
-        var resultScalars =  blankNoiseScalars
+        var resultScalars = blankNoiseScalars
 
         for i in 0..<resultScalars.count {
             // unconditioned + guidance*(text - unconditioned)
