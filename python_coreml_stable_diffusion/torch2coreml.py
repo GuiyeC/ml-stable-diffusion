@@ -140,7 +140,7 @@ def _convert_to_coreml(submodule_name, torchscript_module, sample_inputs,
 
 def quantize_weights_to_8bits(args):
     for model_name in [
-            "text_encoder", "vae_decoder", "unet", "unet_chunk1",
+            "text_encoder", "vae_decoder", "vae_encoder", "unet", "unet_chunk1",
             "unet_chunk2", "safety_checker"
     ]:
         out_path = _get_out_path(args, model_name)
@@ -190,6 +190,7 @@ def bundle_resources_for_swift_cli(args):
     # Compile model using coremlcompiler (Significantly reduces the load time for unet)
     for source_name, target_name in [("text_encoder", "TextEncoder"),
                                      ("vae_decoder", "VAEDecoder"),
+                                     ("vae_encoder", "VAEEncoder"),
                                      ("unet", "Unet"),
                                      ("unet_chunk1", "UnetChunk1"),
                                      ("unet_chunk2", "UnetChunk2"),
