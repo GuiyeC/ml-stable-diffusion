@@ -48,9 +48,12 @@ public extension StableDiffusionPipeline {
             unet = Unet(model: unetModel)
         }
         
-        // Image Encoder
-        let encoderModel = try MLModel(contentsOf: encoderURL, configuration: config)
-        let encoder = Encoder(model: encoderModel)
+        // Optional image encoder
+        var encoder: Encoder? = nil
+        if FileManager.default.fileExists(atPath: encoderURL.path) {
+            let encoderModel = try MLModel(contentsOf: encoderURL, configuration: config)
+            encoder = Encoder(model: encoderModel)
+        }
         
         // Image Decoder
         let decoderModel = try MLModel(contentsOf: decoderURL, configuration: config)

@@ -18,8 +18,8 @@ public struct StableDiffusionPipeline {
     /// Model used to predict noise residuals given an input, diffusion time step, and conditional embedding
     var unet: Unet
     
-    /// Model used to generate final image from latent diffusion process
-    var encoder: Encoder
+    /// Model used to generate initial image for latent diffusion process
+    var encoder: Encoder? = nil
     
     /// Model used to generate final image from latent diffusion process
     var decoder: Decoder
@@ -30,6 +30,16 @@ public struct StableDiffusionPipeline {
     /// Reports whether this pipeline can perform safety checks
     public var canSafetyCheck: Bool {
         safetyChecker != nil
+    }
+    
+    /// Reports whether this pipeline can perform image to image
+    public var canGenerateVariations: Bool {
+        encoder != nil
+    }
+    
+    /// Reports whether this pipeline can perform image to image
+    public var canInpaint: Bool {
+        encoder != nil && unet.latentSampleShape[1] == 9
     }
 
     /// Creates a pipeline using the specified models and tokenizer
@@ -44,7 +54,7 @@ public struct StableDiffusionPipeline {
     public init(
         textEncoder: TextEncoder,
         unet: Unet,
-        encoder: Encoder,
+        encoder: Encoder? = nil,
         decoder: Decoder,
         safetyChecker: SafetyChecker? = nil
     ) {
@@ -75,7 +85,7 @@ public struct StableDiffusionPipeline {
         let mainTick = CFAbsoluteTimeGetCurrent()
         // Encode the input prompt as well as a blank unconditioned input
         let promptEmbedding = try textEncoder.encode(input.prompt)
-        let blankEmbedding = try textEncoder.encode("")
+        let blankEmbedding = try textEncoder.encode(input.negativePrompt)
 
         // Convert to Unet hidden state representation
         let concatEmbedding = MLShapedArray<Float32>(
@@ -89,14 +99,24 @@ public struct StableDiffusionPipeline {
         let scheduler = (0..<imageCount).map { _ in Scheduler(strength: input.strength, stepCount: input.stepCount) }
 
         // Generate random latent samples from specified seed
-        var latents = try generateLatentSamples(imageCount, input: input, scheduler: scheduler[0])
+        var random = NumPyRandomSource(seed: UInt32(input.seed))
+        var latents = try generateLatentSamples(imageCount, input: input, random: &random, scheduler: scheduler[0])
+        // Prepare mask only for inpainting
+        let inpaintingLatents = try prepareMaskLatents(input: input, random: &random)
 
         // De-noising loop
         for (step,t) in scheduler[0].timeSteps.enumerated() {
             // Expand the latents for classifier-free guidance
             // and input to the Unet noise prediction model
-            let latentUnetInput = latents.map {
+            var latentUnetInput = latents.map {
                 MLShapedArray<Float32>(concatenating: [$0, $0], alongAxis: 0)
+            }
+            
+            // Concat mask in case we are doing inpainting
+            if let (mask, maskedImage) = inpaintingLatents {
+                latentUnetInput = latentUnetInput.map {
+                    MLShapedArray<Float32>(concatenating: [$0, mask, maskedImage], alongAxis: 1)
+                }
             }
 
             // Predict noise residuals from latent samples
@@ -124,7 +144,7 @@ public struct StableDiffusionPipeline {
                 pipeline: self,
                 prompt: input.prompt,
                 step: step,
-                stepCount: scheduler[0].timeSteps.count,
+                stepCount: scheduler[0].timeSteps.count - 1,
                 currentLatentSamples: latents,
                 isSafetyEnabled: canSafetyCheck && !disableSafety
             )
@@ -144,30 +164,23 @@ public struct StableDiffusionPipeline {
         return images
     }
     
-    func generateLatentSamples(_ count: Int, stdev: Float, seed: Int) -> [MLShapedArray<Float32>] {
+    func generateLatentSamples(_ count: Int, input: SampleInput, random: inout NumPyRandomSource, scheduler: Scheduler) throws -> [MLShapedArray<Float32>] {
         var sampleShape = unet.latentSampleShape
         sampleShape[0] = 1
-
-        var random = NumPyRandomSource(seed: UInt32(seed))
-        let samples = (0..<count).map { _ in
-            MLShapedArray<Float32>(
-                converting: random.normalShapedArray(sampleShape, mean: 0.0, stdev: Double(stdev)))
+        // Latent shape for inpainting
+        if input.inpaintMask != nil {
+            sampleShape[1] -= 5
         }
-        
-        return samples
-    }
-    
-    func generateLatentSamples(_ count: Int, input: SampleInput, scheduler: Scheduler) throws -> [MLShapedArray<Float32>] {
-        var sampleShape = unet.latentSampleShape
-        sampleShape[0] = 1
         
         let stdev = scheduler.initNoiseSigma
-        var random = NumPyRandomSource(seed: UInt32(input.seed))
         let samples = (0..<count).map { _ in
             MLShapedArray<Float32>(
                 converting: random.normalShapedArray(sampleShape, mean: 0.0, stdev: Double(stdev)))
         }
-        if let image = input.initImage, let strength = input.strength {
+        if let image = input.initImage, input.strength != nil {
+            guard let encoder = encoder else {
+                fatalError("Tried to generate image variations without an Encoder")
+            }
             let latent = try encoder.encode(image, random: { mean, std in
                 Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
             })
@@ -175,6 +188,56 @@ public struct StableDiffusionPipeline {
         }
         
         return samples
+    }
+    
+    func prepareMaskLatents(input: SampleInput, random: inout NumPyRandomSource) throws -> (MLShapedArray<Float32>, MLShapedArray<Float32>)? {
+        guard let image = input.initImage, let mask = input.inpaintMask else { return nil }
+        guard let encoder = encoder else {
+            fatalError("Tried to inpaint without an Encoder")
+        }
+        var imageData = encoder.fromRGBCGImage(image)
+        var maskData = MLShapedArray<Float32>(converting: encoder.fromRGBCGImage(mask))
+        if maskData.shape[1] > 1 {
+            maskData = MLShapedArray<Float32>(
+                scalars: maskData[0][0].scalars,
+                shape: [1, 1, maskData.shape[2], maskData.shape[3]]
+            )
+        }
+        // This is reversed because: image * (mask < 0.5)
+        maskData = MLShapedArray<Float32>(
+            scalars: maskData.scalars.map { $0 < 0 ? 0 : 1 },
+            shape: maskData.shape
+        )
+        imageData = MLShapedArray<Float32>(
+            scalars: zip(imageData.scalars, maskData.scalars + maskData.scalars + maskData.scalars).map { $0 * $1 },
+            shape: imageData.shape
+        )
+        
+        // Encode the mask image into latents space so we can concatenate it to the latents
+        var maskedImageLatent = try encoder.encode(imageData, random: { mean, std in
+            Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
+        })
+        
+        let resizedMask = encoder.resizeImage(mask, size: CGSize(width: maskedImageLatent.shape[3], height: maskedImageLatent.shape[2]))
+        maskData = encoder.fromRGBCGImage(resizedMask)
+        if maskData.shape[1] > 1 {
+            maskData = MLShapedArray<Float32>(
+                scalars: maskData[0][0].scalars,
+                shape: [1, 1, maskData.shape[2], maskData.shape[3]]
+            )
+        }
+        maskData = MLShapedArray<Float32>(
+            scalars: maskData.scalars.map { $0 < 0 ? 1 : 0 },
+            shape: maskData.shape
+        )
+//        maskData = MLShapedArray(scalars: maskData.scalars, shape: [1] + maskData.shape)
+        
+        // Expand the latents for classifier-free guidance
+        // and input to the Unet noise prediction model
+        maskData = MLShapedArray<Float32>(concatenating: [maskData, maskData], alongAxis: 0)
+        maskedImageLatent = MLShapedArray<Float32>(concatenating: [maskedImageLatent, maskedImageLatent], alongAxis: 0)
+        
+        return (maskData, maskedImageLatent)
     }
 
     func toHiddenStates(_ embedding: MLShapedArray<Float32>) -> MLShapedArray<Float32> {

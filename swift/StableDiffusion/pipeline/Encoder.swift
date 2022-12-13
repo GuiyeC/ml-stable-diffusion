@@ -25,6 +25,15 @@ public struct Encoder {
 
     /// Prediction queue
     let queue = DispatchQueue(label: "encoder.predict")
+    
+    var inputImageDescription: MLFeatureDescription {
+        model.modelDescription.inputDescriptionsByName["z"]!
+    }
+
+    /// The expected shape of the models latent sample input
+    public var inputImageShape: [Int] {
+        inputImageDescription.multiArrayConstraint!.shape.map { $0.intValue }
+    }
 
     /// Encode image into latent samples
     ///
@@ -32,7 +41,14 @@ public struct Encoder {
     ///    - image: Input image
     ///  - Returns: Latent samples to decode
     public func encode(_ image: CGImage, random: ((Float32, Float32) -> Float32)) throws -> MLShapedArray<Float32> {
-        let imageData = fromRGBCGImage(image)
+        let width: Int = inputImageShape[3]
+        let height: Int = inputImageShape[2]
+        let resizedImage = resizeImage(image, size: CGSize(width: width, height: height))
+        let imageData = fromRGBCGImage(resizedImage)
+        return try encode(imageData, random: random)
+    }
+    
+    public func encode(_ imageData: MLShapedArray<Float32>, random: ((Float32, Float32) -> Float32)) throws -> MLShapedArray<Float32> {
         let dict = [inputName: MLMultiArray(imageData)]
         let input = try MLDictionaryFeatureProvider(dictionary: dict)
 
@@ -72,34 +88,43 @@ public struct Encoder {
     typealias PixelBufferPFx1 = vImage.PixelBuffer<vImage.PlanarF>
     typealias PixelBufferP8x3 = vImage.PixelBuffer<vImage.Planar8x3>
     typealias PixelBufferIFx3 = vImage.PixelBuffer<vImage.InterleavedFx3>
+    typealias PixelBufferP8x1 = vImage.PixelBuffer<vImage.Planar8>
+    typealias PixelBufferI8x2 = vImage.PixelBuffer<vImage.Interleaved8x2>
     typealias PixelBufferI8x3 = vImage.PixelBuffer<vImage.Interleaved8x3>
     typealias PixelBufferI8x4 = vImage.PixelBuffer<vImage.Interleaved8x4>
-
+    
     func fromRGBCGImage(_ image: CGImage) -> MLShapedArray<Float32> {
-        let width: Int = 512
-        let height: Int = 512
-        let resizedImage = resizeImage(image, size: CGSize(width: width, height: height))
-        
-        var format: vImage_CGImageFormat = .init(cgImage: resizedImage)!
-        let uint8ImageAlpha = try! PixelBufferI8x4(cgImage: image, cgImageFormat: &format)
-        let uint8Image = PixelBufferI8x3(width: width, height: height)
-        // Drop alpha channel
-        uint8ImageAlpha.convert(to: uint8Image, channelOrdering: vImage.ChannelOrdering.RGBA)
-        let floatImage = PixelBufferIFx3(width: width, height: height)
-        uint8Image.convert(to: floatImage) // maps [0 255] -> [0.0 1.0] and clips
-        
-        let channelShape = [1, resizedImage.width, resizedImage.height]
-        let floatChannels = floatImage.planarBuffers()
-        let arrayChannels = floatChannels.map { channel in
-            let cOut = PixelBufferPFx1(width: width, height:height)
-            channel.multiply(by: 2.0, preBias: 0.0, postBias: -1.0, destination: cOut)
-        
-            return MLShapedArray(scalars: cOut.array, shape: channelShape)
+        let width: Int = image.width
+        let height: Int = image.height
+        let channelShape = [1, image.width, image.height]
+        var format: vImage_CGImageFormat = .init(cgImage: image)!
+        if format.bitsPerPixel == 32 {
+            let uint8ImageAlpha = try! PixelBufferI8x4(cgImage: image, cgImageFormat: &format)
+            let uint8Image: PixelBufferI8x3 = PixelBufferI8x3(width: width, height: height)
+            
+            // Drop alpha channel
+            uint8ImageAlpha.convert(to: uint8Image, channelOrdering: vImage.ChannelOrdering.RGBA)
+            
+            let floatImage = PixelBufferIFx3(width: width, height: height)
+            uint8Image.convert(to: floatImage) // maps [0 255] -> [0.0 1.0] and clips
+            
+            let floatChannels = floatImage.planarBuffers()
+            let arrayChannels = floatChannels.map { channel in
+                let cOut = PixelBufferPFx1(width: width, height: height)
+                channel.multiply(by: 2.0, preBias: 0.0, postBias: -1.0, destination: cOut)
+            
+                return MLShapedArray(scalars: cOut.array, shape: channelShape)
+            }
+            
+            var array = MLShapedArray<Float32>(concatenating: arrayChannels, alongAxis: 0)
+            array = MLShapedArray<Float32>(scalars: array.scalars, shape: [1, 3, height, width])
+            return array
+        } else {
+            let singleChannelUint8Image = try! PixelBufferP8x1(cgImage: image, cgImageFormat: &format)
+            let channel = PixelBufferPFx1(width: width, height: height)
+            singleChannelUint8Image.convert(to: channel)
+            return MLShapedArray<Float32>(scalars: channel.array, shape: [1, 1, height, width])
         }
-        
-        var array = MLShapedArray<Float32>(concatenating: arrayChannels, alongAxis: 0)
-        array = MLShapedArray<Float32>(scalars: array.scalars, shape: [1, 3, width, height])
-        return array
     }
     
     func resizeImage(_ image: CGImage, size: CGSize) -> CGImage {
@@ -113,7 +138,7 @@ public struct Encoder {
             height: height,
             bitsPerComponent: image.bitsPerComponent,
             bytesPerRow: 0,
-            space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         )!
         context.interpolationQuality = .high
