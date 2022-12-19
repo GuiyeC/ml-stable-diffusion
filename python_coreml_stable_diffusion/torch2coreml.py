@@ -875,10 +875,13 @@ def main(args):
     os.makedirs(args.o, exist_ok=True)
 
     # Instantiate diffusers pipe as reference
-    logger.info(
-        f"Initializing StableDiffusionPipeline with {args.model_version}..")
-    pipe = StableDiffusionPipeline.from_pretrained(args.model_version,
-                                                   use_auth_token=True)
+    if args.model_location:
+        logger.info(f"Initializing StableDiffusionPipeline from {args.model_location}..")
+        pipe = StableDiffusionPipeline.from_pretrained(args.model_location, local_files_only=True)
+    else:
+        logger.info(f"Initializing StableDiffusionPipeline with {args.model_version}..")
+        pipe = StableDiffusionPipeline.from_pretrained(args.model_version, use_auth_token=True)
+    
     logger.info("Done.")
 
     # Convert models
@@ -935,6 +938,12 @@ def parser_spec():
         ("The pre-trained model checkpoint and configuration to restore. "
          "For available versions: https://huggingface.co/models?search=stable-diffusion"
          ))
+    parser.add_argument(
+        "--model-location",
+        default=None,
+        help=
+        "The local pre-trained model checkpoint and configuration to restore."
+    )
     parser.add_argument("--compute-unit",
                         choices=tuple(cu
                                       for cu in ct.ComputeUnit._member_names_),
