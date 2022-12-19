@@ -41,6 +41,14 @@ public struct StableDiffusionPipeline {
     public var canInpaint: Bool {
         encoder != nil && unet.latentSampleShape[1] == 9
     }
+    
+    /// Expected encoder input size
+    public var expectedInputSize: CGSize? {
+        guard let encoder else { return nil }
+        let width: Int = encoder.inputImageShape[3]
+        let height: Int = encoder.inputImageShape[2]
+        return CGSize(width: width, height: height)
+    }
 
     /// Creates a pipeline using the specified models and tokenizer
     ///
