@@ -321,9 +321,12 @@ extension StableDiffusionPipeline {
         public let currentLatentSamples: [MLShapedArray<Float32>]
         public let isSafetyEnabled: Bool
         public var currentImages: [CGImage?] {
-            try! pipeline.decodeToImages(
-                currentLatentSamples,
-                disableSafety: !isSafetyEnabled)
+            do {
+                return try pipeline.decodeToImages(currentLatentSamples, disableSafety: !isSafetyEnabled)
+            } catch {
+                print("Error decoding progress images", error.localizedDescription)
+                return []
+            }
         }
     }
 }
