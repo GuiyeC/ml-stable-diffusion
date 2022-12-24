@@ -94,37 +94,49 @@ public struct Encoder {
     typealias PixelBufferI8x4 = vImage.PixelBuffer<vImage.Interleaved8x4>
     
     func fromRGBCGImage(_ image: CGImage) -> MLShapedArray<Float32> {
-        let width: Int = image.width
-        let height: Int = image.height
-        let channelShape = [1, image.width, image.height]
-        var format: vImage_CGImageFormat = .init(cgImage: image)!
-        if format.bitsPerPixel == 32 {
-            let uint8ImageAlpha = try! PixelBufferI8x4(cgImage: image, cgImageFormat: &format)
-            let uint8Image: PixelBufferI8x3 = PixelBufferI8x3(width: width, height: height)
-            
-            // Drop alpha channel
-            uint8ImageAlpha.convert(to: uint8Image, channelOrdering: vImage.ChannelOrdering.RGBA)
-            
-            let floatImage = PixelBufferIFx3(width: width, height: height)
-            uint8Image.convert(to: floatImage) // maps [0 255] -> [0.0 1.0] and clips
-            
-            let floatChannels = floatImage.planarBuffers()
-            let arrayChannels = floatChannels.map { channel in
-                let cOut = PixelBufferPFx1(width: width, height: height)
-                channel.multiply(by: 2.0, preBias: 0.0, postBias: -1.0, destination: cOut)
-            
-                return MLShapedArray(scalars: cOut.array, shape: channelShape)
-            }
-            
-            var array = MLShapedArray<Float32>(concatenating: arrayChannels, alongAxis: 0)
-            array = MLShapedArray<Float32>(scalars: array.scalars, shape: [1, 3, height, width])
-            return array
-        } else {
-            let singleChannelUint8Image = try! PixelBufferP8x1(cgImage: image, cgImageFormat: &format)
-            let channel = PixelBufferPFx1(width: width, height: height)
-            singleChannelUint8Image.convert(to: channel)
-            return MLShapedArray<Float32>(scalars: channel.array, shape: [1, 1, height, width])
-        }
+        var sourceFormat = vImage_CGImageFormat(cgImage: image)!
+        var mediumFormat = vImage_CGImageFormat(
+            bitsPerComponent: 8 * MemoryLayout<UInt8>.size,
+            bitsPerPixel: 8 * MemoryLayout<UInt8>.size * 4,
+            colorSpace: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue)
+        )!
+        let width = vImagePixelCount(exactly: image.width)!
+        let height = vImagePixelCount(exactly: image.height)!
+        
+        var sourceImageBuffer = try! vImage_Buffer(cgImage: image)
+        
+        var mediumDesination = try! vImage_Buffer(width: Int(width), height: Int(height), bitsPerPixel: mediumFormat.bitsPerPixel)
+        
+        let converter = vImageConverter_CreateWithCGImageFormat(
+            &sourceFormat,
+            &mediumFormat,
+            nil,
+            vImage_Flags(kvImagePrintDiagnosticsToConsole),
+            nil
+        )!.takeRetainedValue()
+        
+        vImageConvert_AnyToAny(converter, &sourceImageBuffer, &mediumDesination, nil, vImage_Flags(kvImagePrintDiagnosticsToConsole))
+        
+        var destinationA = try! vImage_Buffer(width: Int(width), height: Int(height), bitsPerPixel: 8 * UInt32(MemoryLayout<Float>.size))
+        var destinationR = try! vImage_Buffer(width: Int(width), height: Int(height), bitsPerPixel: 8 * UInt32(MemoryLayout<Float>.size))
+        var destinationG = try! vImage_Buffer(width: Int(width), height: Int(height), bitsPerPixel: 8 * UInt32(MemoryLayout<Float>.size))
+        var destinationB = try! vImage_Buffer(width: Int(width), height: Int(height), bitsPerPixel: 8 * UInt32(MemoryLayout<Float>.size))
+        
+        var minFloat: [Float] = [-1.0, -1.0, -1.0, -1.0]
+        var maxFloat: [Float] = [1.0, 1.0, 1.0, 1.0]
+        
+        vImageConvert_ARGB8888toPlanarF(&mediumDesination, &destinationA, &destinationR, &destinationG, &destinationB, &maxFloat, &minFloat, .zero)
+        
+        let redData = Data(bytes: destinationR.data, count: Int(width) * Int(height) * MemoryLayout<Float>.size)
+        let greenData = Data(bytes: destinationG.data, count: Int(width) * Int(height) * MemoryLayout<Float>.size)
+        let blueData = Data(bytes: destinationB.data, count: Int(width) * Int(height) * MemoryLayout<Float>.size)
+        
+        let imageData = redData + greenData + blueData
+        
+        let shapedArray = MLShapedArray<Float32>(data: imageData, shape: [1, 3, Int(height), Int(width)])
+        
+        return shapedArray
     }
     
     func resizeImage(_ image: CGImage, size: CGSize) -> CGImage {
