@@ -205,8 +205,9 @@ public struct StableDiffusionPipeline {
         }
         var imageData = encoder.fromRGBCGImage(image)
         var maskData = encoder.alphaFromRGBCGImage(mask)
+        // This is reversed because: image * (mask < 0.5)
         imageData = MLShapedArray<Float32>(
-            scalars: zip(imageData.scalars, maskData.scalars + maskData.scalars + maskData.scalars).map { $0 * $1 },
+            scalars: zip(imageData.scalars, maskData.scalars + maskData.scalars + maskData.scalars).map { $0 * (1 - $1) },
             shape: imageData.shape
         )
         
@@ -217,11 +218,6 @@ public struct StableDiffusionPipeline {
         
         let resizedMask = encoder.resizeImage(mask, size: CGSize(width: maskedImageLatent.shape[3], height: maskedImageLatent.shape[2]))
         maskData = encoder.alphaFromRGBCGImage(resizedMask)
-        // This is reversed because: image * (mask < 0.5)
-        maskData = MLShapedArray<Float32>(
-            scalars: maskData.scalars.map { 1 - $0 },
-            shape: maskData.shape
-        )
         
         // Expand the latents for classifier-free guidance
         // and input to the Unet noise prediction model
