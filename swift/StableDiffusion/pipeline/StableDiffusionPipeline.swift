@@ -206,10 +206,10 @@ public struct StableDiffusionPipeline {
         var imageData = encoder.fromRGBCGImage(image)
         var maskData = encoder.alphaFromRGBCGImage(mask)
         // This is reversed because: image * (mask < 0.5)
-        imageData = MLShapedArray<Float32>(
-            scalars: zip(imageData.scalars, maskData.scalars + maskData.scalars + maskData.scalars).map { $0 * (1 - $1) },
-            shape: imageData.shape
-        )
+        let maskedImageScalars = imageData.scalars.enumerated().map { index, value in
+            value * (1 - maskData.scalars[index % 3])
+        }
+        imageData = MLShapedArray<Float32>(scalars: maskedImageScalars, shape: imageData.shape)
         
         // Encode the mask image into latents space so we can concatenate it to the latents
         var maskedImageLatent = try encoder.encode(imageData, random: { mean, std in
