@@ -191,7 +191,7 @@ public struct Encoder {
             bitsPerComponent: image.bitsPerComponent,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         context.interpolationQuality = .high
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))

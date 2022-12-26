@@ -204,10 +204,10 @@ public struct StableDiffusionPipeline {
             fatalError("Tried to inpaint without an Encoder")
         }
         var imageData = encoder.fromRGBCGImage(image)
-        var maskData = encoder.alphaFromRGBCGImage(mask)
         // This is reversed because: image * (mask < 0.5)
+        let maskDataScalars = encoder.alphaFromRGBCGImage(mask).scalars.map { 1 - $0 }
         let maskedImageScalars = imageData.scalars.enumerated().map { index, value in
-            value * (1 - maskData.scalars[index % 3])
+            value * maskDataScalars[index % maskDataScalars.count]
         }
         imageData = MLShapedArray<Float32>(scalars: maskedImageScalars, shape: imageData.shape)
         
@@ -217,7 +217,7 @@ public struct StableDiffusionPipeline {
         })
         
         let resizedMask = encoder.resizeImage(mask, size: CGSize(width: maskedImageLatent.shape[3], height: maskedImageLatent.shape[2]))
-        maskData = encoder.alphaFromRGBCGImage(resizedMask)
+        var maskData = encoder.alphaFromRGBCGImage(resizedMask)
         
         // Expand the latents for classifier-free guidance
         // and input to the Unet noise prediction model
