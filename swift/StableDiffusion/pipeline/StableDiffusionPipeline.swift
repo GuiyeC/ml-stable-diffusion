@@ -10,7 +10,7 @@ import CoreGraphics
 ///
 /// This implementation matches:
 /// [Hugging Face Diffusers Pipeline](https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py)
-public struct StableDiffusionPipeline {
+public class StableDiffusionPipeline {
 
     /// Model to generate embeddings for tokenized input text
     var textEncoder: TextEncoder
@@ -91,17 +91,7 @@ public struct StableDiffusionPipeline {
         progressHandler: (Progress) -> Bool = { _ in true }
     ) throws -> [CGImage?] {
         let mainTick = CFAbsoluteTimeGetCurrent()
-        // Encode the input prompt as well as a blank unconditioned input
-        let promptEmbedding = try textEncoder.encode(input.prompt)
-        let blankEmbedding = try textEncoder.encode(input.negativePrompt)
-
-        // Convert to Unet hidden state representation
-        let concatEmbedding = MLShapedArray<Float32>(
-            concatenating: [blankEmbedding, promptEmbedding],
-            alongAxis: 0
-        )
-
-        let hiddenStates = toHiddenStates(concatEmbedding)
+        let hiddenStates = try hiddenStates(from: input)
 
         /// Setup schedulers
         let scheduler = (0..<imageCount).map { _ in Scheduler(strength: input.strength, stepCount: input.stepCount) }
@@ -227,6 +217,29 @@ public struct StableDiffusionPipeline {
         return (maskData, maskedImageLatent)
     }
 
+    private var lastInput: SampleInput?
+    private var lastHiddenStates: MLShapedArray<Float32>?
+    func hiddenStates(from input: SampleInput) throws -> MLShapedArray<Float32> {
+        if lastInput?.prompt == input.prompt, lastInput?.negativePrompt == input.negativePrompt, let lastHiddenStates {
+            return lastHiddenStates
+        }
+        // Encode the input prompt as well as a blank unconditioned input
+        let promptEmbedding = try textEncoder.encode(input.prompt)
+        let blankEmbedding = try textEncoder.encode(input.negativePrompt)
+
+        // Convert to Unet hidden state representation
+        let concatEmbedding = MLShapedArray<Float32>(
+            concatenating: [blankEmbedding, promptEmbedding],
+            alongAxis: 0
+        )
+        let hiddenStates = toHiddenStates(concatEmbedding)
+        
+        lastInput = input
+        lastHiddenStates = hiddenStates
+        
+        return hiddenStates
+    }
+    
     func toHiddenStates(_ embedding: MLShapedArray<Float32>) -> MLShapedArray<Float32> {
         // Unoptimized manual transpose [0, 2, None, 1]
         // e.g. From [2, 77, 768] to [2, 768, 1, 77]
