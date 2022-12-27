@@ -16,7 +16,7 @@ public extension StableDiffusionPipeline {
     ///   - disableSafety: Load time disable of safety to save memory
     /// - Returns:
     ///  Pipeline ready for image generation if all  necessary resources loaded
-    init(resourcesAt baseURL: URL,
+    convenience init(resourcesAt baseURL: URL,
          configuration config: MLModelConfiguration = .init(),
          disableSafety: Bool = false) throws {
 
