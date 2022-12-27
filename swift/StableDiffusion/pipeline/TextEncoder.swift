@@ -14,6 +14,7 @@ public class TextEncoder {
     private var url: URL
     private var config: MLModelConfiguration
     private var _model: MLModel?
+    @discardableResult
     func model() throws -> MLModel {
         if let _model { return _model }
         let model = try MLModel(contentsOf: url, configuration: config)
@@ -39,7 +40,8 @@ public class TextEncoder {
     ///     - text: Input text to be tokenized and then embedded
     ///  - Returns: Embedding representing the input text
     public func encode(_ text: String) throws -> MLShapedArray<Float32> {
-
+        // Make sure model is loaded
+        try model()
         // Get models expected input length
         let inputLength = inputShape.last!
 
