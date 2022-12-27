@@ -5,7 +5,7 @@ import Foundation
 import CoreML
 
 /// U-Net noise prediction model for stable diffusion
-public struct Unet {
+public class Unet {
 
     /// Model used to predict noise residuals given an input, diffusion time step, and conditional embedding
     ///
@@ -17,8 +17,10 @@ public struct Unet {
     /// - Parameters:
     ///   - model: U-Net held in single Core ML model
     /// - Returns: Ready for prediction
-    public init(model: MLModel) {
-        self.models = [model]
+    public init(url: URL, config: MLModelConfiguration) {
+        self.models = [url].lazy.map {
+            try! MLModel(contentsOf: $0, configuration: config)
+        }
     }
 
     /// Creates a U-Net noise prediction model
@@ -26,8 +28,10 @@ public struct Unet {
     /// - Parameters:
     ///   - chunks: U-Net held chunked into multiple Core ML models
     /// - Returns: Ready for prediction
-    public init(chunks: [MLModel]) {
-        self.models = chunks
+    public init(chunkUrls: [URL], config: MLModelConfiguration) {
+        self.models = chunkUrls.lazy.map {
+            try! MLModel(contentsOf: $0, configuration: config)
+        }
     }
 
     var latentSampleDescription: MLFeatureDescription {

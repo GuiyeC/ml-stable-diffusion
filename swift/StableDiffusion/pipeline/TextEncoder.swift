@@ -5,22 +5,32 @@ import Foundation
 import CoreML
 
 ///  A model for encoding text
-public struct TextEncoder {
+public class TextEncoder {
 
     /// Text tokenizer
     var tokenizer: BPETokenizer
 
     /// Embedding model
-    var model: MLModel
-
+    private var url: URL
+    private var config: MLModelConfiguration
+    private var _model: MLModel?
+    func model() throws -> MLModel {
+        if let _model { return _model }
+        let model = try MLModel(contentsOf: url, configuration: config)
+        _model = model
+        return model
+    }
+    
     /// Creates text encoder which embeds a tokenized string
     ///
     /// - Parameters:
     ///   - tokenizer: Tokenizer for input text
-    ///   - model: Model for encoding tokenized text
-    public init(tokenizer: BPETokenizer, model: MLModel) {
+    ///   - url: URL for the model for encoding tokenized text
+    ///   - config: Model loading configuration
+    public init(tokenizer: BPETokenizer, url: URL, config: MLModelConfiguration) {
         self.tokenizer = tokenizer
-        self.model = model
+        self.url = url
+        self.config = config
     }
 
     /// Encode input text/string
@@ -52,6 +62,7 @@ public struct TextEncoder {
     let queue = DispatchQueue(label: "textencoder.predict")
 
     func encode(ids: [Int]) throws -> MLShapedArray<Float32> {
+        let model = try model()
         let inputName = inputDescription.name
         let inputShape = inputShape
 
@@ -66,11 +77,10 @@ public struct TextEncoder {
     }
 
     var inputDescription: MLFeatureDescription {
-        model.modelDescription.inputDescriptionsByName.first!.value
+        _model!.modelDescription.inputDescriptionsByName.first!.value
     }
 
     var inputShape: [Int] {
         inputDescription.multiArrayConstraint!.shape.map { $0.intValue }
     }
-
 }

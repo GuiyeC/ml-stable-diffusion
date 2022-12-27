@@ -33,19 +33,15 @@ public extension StableDiffusionPipeline {
 
         // Text tokenizer and encoder
         let tokenizer = try BPETokenizer(mergesAt: mergesURL, vocabularyAt: vocabURL)
-        let textEncoderModel = try MLModel(contentsOf: textEncoderURL, configuration: config)
-        let textEncoder = TextEncoder(tokenizer: tokenizer, model:textEncoderModel )
+        let textEncoder = TextEncoder(tokenizer: tokenizer, url: textEncoderURL, config: config)
 
         // Unet model
         let unet: Unet
         if FileManager.default.fileExists(atPath: unetChunk1URL.path) &&
             FileManager.default.fileExists(atPath: unetChunk2URL.path) {
-            let chunk1 = try MLModel(contentsOf: unetChunk1URL, configuration: config)
-            let chunk2 = try MLModel(contentsOf: unetChunk2URL, configuration: config)
-            unet = Unet(chunks: [chunk1, chunk2])
+            unet = Unet(chunkUrls: [unetChunk1URL, unetChunk2URL], config: config)
         } else {
-            let unetModel =  try MLModel(contentsOf: unetURL, configuration: config)
-            unet = Unet(model: unetModel)
+            unet = Unet(url: unetURL, config: config)
         }
         
         // Optional image encoder
