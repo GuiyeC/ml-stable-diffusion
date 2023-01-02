@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
-from guernika_model_converter_cli._version import __version__
+from python_coreml_stable_diffusion._version import __version__
 
 setup(
-    name='guernika_model_converter_cli',
+    name='python_coreml_stable_diffusion',
     version=__version__,
     url='https://huggingface.co/Guernika/CoreMLStableDiffusion',
     description="Run Stable Diffusion on Apple Silicon with Guernika",
