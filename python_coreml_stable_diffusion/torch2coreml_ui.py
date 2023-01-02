@@ -11,6 +11,7 @@ class Namespace:
         
 import os
 import traceback
+import webbrowser
 import tkinter as tk
 from tkinter import *
 from tkinter import filedialog
@@ -45,6 +46,9 @@ class PlaceholderEntry(tk.Entry):
         return content
         
 import time
+
+def is_guernika_installed():
+    return os.path.exists("/Applications/Guernika.app")
 
 if __name__ == "__main__":
     window = Tk()
@@ -145,6 +149,12 @@ if __name__ == "__main__":
     progress_label = Label(window, text="Converting model, this may take a while (15-20 minutes).")
     progressbar = Progressbar(window, orient=HORIZONTAL, mode="indeterminate", length=360)
     
+    def add_convert_button():
+        if not is_guernika_installed():
+            convert_button.grid(row=11, column=3, padx=16, pady=(24, 24))
+        else:
+            convert_button.grid(row=11, column=1, columnspan=3, padx=16, pady=(24, 24))
+    
     def show_converting(is_converting):
         if is_converting:
             progress_label.grid(row=9, column=0, columnspan=3, padx=16, pady=(16,4))
@@ -155,7 +165,7 @@ if __name__ == "__main__":
             progress_label.grid_remove()
             progressbar.grid_remove()
             progressbar.stop()
-            convert_button.grid(row=11, column=0, columnspan=3, padx=16, pady=(12, 24))
+            add_convert_button()
             
         version_entry["state"] = DISABLED if is_converting else NORMAL
         local_model_button["state"] = DISABLED if is_converting else NORMAL
@@ -168,6 +178,9 @@ if __name__ == "__main__":
         convert_decoder_check["state"] = DISABLED if is_converting else NORMAL
         convert_safety_checker_check["state"] = DISABLED if is_converting else NORMAL
         window.update()
+        
+    def open_appstore():
+        webbrowser.open("https://apps.apple.com/app/id1660407508")
 
     def convert_model():
         global ckpt_location
@@ -221,10 +234,13 @@ if __name__ == "__main__":
             traceback.print_exc()
         finally:
             show_converting(False)
-    
-    convert_button = Button(window, text="Convert to Guernika", command=convert_model)
-    convert_button.grid(row=11, column=1, columnspan=3, padx=16, pady=(24, 24))
         
+    if not is_guernika_installed():
+        guernika_button = Button(window, text="Install Guernika", command=open_appstore)
+        guernika_button.grid(row=11, column=1, padx=16, pady=(24, 24))
+    convert_button = Button(window, text="Convert to Guernika", command=convert_model)
+    add_convert_button()
+    
     window.minsize(500, 50)
     window.resizable(False, False)
     window.grid_columnconfigure(0, weight=1)
