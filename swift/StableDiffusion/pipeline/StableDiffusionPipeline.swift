@@ -97,7 +97,7 @@ public class StableDiffusionPipeline {
         let scheduler = (0..<imageCount).map { _ in Scheduler(strength: input.strength, stepCount: input.stepCount) }
 
         // Generate random latent samples from specified seed
-        var random = NumPyRandomSource(seed: UInt32(input.seed))
+        var random = NumPyRandomSource(seed: input.seed)
         var latents = try generateLatentSamples(imageCount, input: input, random: &random, scheduler: scheduler[0])
         // Prepare mask only for inpainting
         let inpaintingLatents = try prepareMaskLatents(input: input, random: &random)

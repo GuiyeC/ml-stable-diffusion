@@ -14,7 +14,7 @@ public struct SampleInput: Hashable {
     public var initImage: CGImage?
     public var strength: Float?
     public var inpaintMask: CGImage?
-    public var seed: Int
+    public var seed: UInt32
     public var stepCount: Int
     /// Controls the influence of the text prompt on sampling process (0=random images)
     public var guidanceScale: Float
@@ -22,7 +22,7 @@ public struct SampleInput: Hashable {
     public init(
         prompt: String,
         negativePrompt: String = "",
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
         guidanceScale: Float = 7.5
     ) {
@@ -41,7 +41,7 @@ public struct SampleInput: Hashable {
         negativePrompt: String = "",
         initImage: CGImage?,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
         guidanceScale: Float = 7.5
     ) {
@@ -60,7 +60,7 @@ public struct SampleInput: Hashable {
         negativePrompt: String = "",
         initImage: CGImage?,
         inpaintMask: CGImage,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
         guidanceScale: Float = 7.5
     ) {
@@ -84,7 +84,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: UIImage,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
@@ -103,7 +103,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: UIImage,
         inpaintMask: CGImage,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
@@ -122,7 +122,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: UIImage,
         inpaintMask: UIImage,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
@@ -147,7 +147,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: NSImage,
         strength: Float = 0.75,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
@@ -167,7 +167,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: NSImage,
         inpaintMask: CGImage,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
@@ -187,7 +187,7 @@ public extension SampleInput {
         negativePrompt: String = "",
         initImage: NSImage,
         inpaintMask: NSImage,
-        seed: Int = Int.random(in: 0...Int(UInt32.max)),
+        seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
         guidanceScale: Float = 7.5
     ) {
