@@ -1,18 +1,13 @@
 from setuptools import setup, find_packages
 
-from python_coreml_stable_diffusion._version import __version__
-
-with open('README.md') as f:
-    readme = f.read()
+from guernika_model_converter_cli._version import __version__
 
 setup(
-    name='python_coreml_stable_diffusion',
+    name='guernika_model_converter_cli',
     version=__version__,
-    url='https://github.com/apple/ml-stable-diffusion',
-    description="Run Stable Diffusion on Apple Silicon with Core ML (Python and Swift)",
-    long_description=readme,
-    long_description_content_type='text/markdown',
-    author='Apple Inc.',
+    url='https://huggingface.co/Guernika/CoreMLStableDiffusion',
+    description="Run Stable Diffusion on Apple Silicon with Guernika",
+    author='Guernika',
     install_requires=[
         "coremltools>=6.1",
         "diffusers[torch]",
