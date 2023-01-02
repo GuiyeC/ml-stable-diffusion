@@ -130,10 +130,6 @@ if __name__ == "__main__":
     # compute units
     selected_compute_unit = StringVar(window)
     selected_compute_unit.set('CPU_AND_NE')
-#    def compute_units_changed():
-#        print(selected_compute_unit.get())
-#        window.update()
-    
     compute_units_label = Label(window, text="Compute units:")
     compute_units_label.grid(row=7, column=0, columnspan=5, padx=16, pady=(12, 0), sticky='W')
     
@@ -157,8 +153,8 @@ if __name__ == "__main__":
     
     def show_converting(is_converting):
         if is_converting:
-            progress_label.grid(row=9, column=0, columnspan=3, padx=16, pady=(16,4))
-            progressbar.grid(row=10, column=0, columnspan=3, padx=16, pady=(4,24))
+            progress_label.grid(row=9, column=0, columnspan=5, padx=16, pady=(16,4))
+            progressbar.grid(row=10, column=0, columnspan=5, padx=16, pady=(4,24))
             progressbar.start()
             convert_button.grid_remove()
         else:

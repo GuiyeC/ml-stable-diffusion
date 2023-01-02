@@ -1062,3 +1062,5 @@ def parser_spec():
 if __name__ == "__main__":
     parser = parser_spec()
     args = parser.parse_args()
+    
+    main(args)
