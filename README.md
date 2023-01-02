@@ -123,8 +123,10 @@ Please use the `--help` flag to learn about batched generation and more.
 import StableDiffusion
 ...
 let pipeline = try StableDiffusionPipeline(resourcesAt: resourceURL)
+pipeline.loadResources()
 let image = try pipeline.generateImages(prompt: prompt, seed: seed).first
 ```
+On iOS, the `reduceMemory` option should be set to `true` when constructing `StableDiffusionPipeline`
 
 ### Swift Package Details
 

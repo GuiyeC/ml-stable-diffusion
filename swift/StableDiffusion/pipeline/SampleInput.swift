@@ -18,13 +18,15 @@ public struct SampleInput: Hashable {
     public var stepCount: Int
     /// Controls the influence of the text prompt on sampling process (0=random images)
     public var guidanceScale: Float
+    public var scheduler: StableDiffusionScheduler = .pndmScheduler
     
     public init(
         prompt: String,
         negativePrompt: String = "",
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -34,6 +36,7 @@ public struct SampleInput: Hashable {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     public init(
@@ -43,7 +46,8 @@ public struct SampleInput: Hashable {
         strength: Float = 0.75,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -53,6 +57,7 @@ public struct SampleInput: Hashable {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     public init(
@@ -62,7 +67,8 @@ public struct SampleInput: Hashable {
         inpaintMask: CGImage,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 20,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -72,6 +78,7 @@ public struct SampleInput: Hashable {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
 }
 
@@ -86,7 +93,8 @@ public extension SampleInput {
         strength: Float = 0.75,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -96,6 +104,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     init(
@@ -105,7 +114,8 @@ public extension SampleInput {
         inpaintMask: CGImage,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -115,6 +125,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     init(
@@ -124,7 +135,8 @@ public extension SampleInput {
         inpaintMask: UIImage,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -134,6 +146,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
 }
 #endif
@@ -149,7 +162,8 @@ public extension SampleInput {
         strength: Float = 0.75,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -160,6 +174,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     init(
@@ -169,7 +184,8 @@ public extension SampleInput {
         inpaintMask: CGImage,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -180,6 +196,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
     
     init(
@@ -189,7 +206,8 @@ public extension SampleInput {
         inpaintMask: NSImage,
         seed: UInt32 = UInt32.random(in: 0...UInt32.max),
         stepCount: Int = 50,
-        guidanceScale: Float = 7.5
+        guidanceScale: Float = 7.5,
+        scheduler: StableDiffusionScheduler = .pndmScheduler
     ) {
         self.prompt = prompt
         self.negativePrompt = negativePrompt
@@ -201,6 +219,7 @@ public extension SampleInput {
         self.seed = seed
         self.stepCount = stepCount
         self.guidanceScale = guidanceScale
+        self.scheduler = scheduler
     }
 }
 #endif

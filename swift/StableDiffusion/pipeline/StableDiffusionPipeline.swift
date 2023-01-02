@@ -6,11 +6,20 @@ import CoreML
 import Accelerate
 import CoreGraphics
 
+/// Schedulers compatible with StableDiffusionPipeline
+public enum StableDiffusionScheduler {
+    /// Scheduler that uses a pseudo-linear multi-step (PLMS) method
+    case pndmScheduler
+    /// Scheduler that uses a second order DPM-Solver++ algorithm
+    case dpmSolverMultistepScheduler
+}
+
 /// A pipeline used to generate image samples from text input using stable diffusion
 ///
 /// This implementation matches:
 /// [Hugging Face Diffusers Pipeline](https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py)
-public class StableDiffusionPipeline {
+@available(iOS 16.2, macOS 13.1, *)
+public class StableDiffusionPipeline: ResourceManaging {
 
     /// Model to generate embeddings for tokenized input text
     var textEncoder: TextEncoder
@@ -26,6 +35,14 @@ public class StableDiffusionPipeline {
 
     /// Optional model for checking safety of generated image
     var safetyChecker: SafetyChecker? = nil
+
+    /// Option to reduce memory during image generation
+    ///
+    /// If true, the pipeline will lazily load TextEncoder, Unet, Decoder, and SafetyChecker
+    /// when needed and aggressively unload their resources after
+    ///
+    /// This will increase latency in favor of reducing memory
+    var reduceMemory: Bool = false
 
     /// Reports whether this pipeline can perform safety checks
     public var canSafetyCheck: Bool {
@@ -64,13 +81,49 @@ public class StableDiffusionPipeline {
         unet: Unet,
         encoder: Encoder? = nil,
         decoder: Decoder,
-        safetyChecker: SafetyChecker? = nil
+        safetyChecker: SafetyChecker? = nil,
+        reduceMemory: Bool = false
     ) {
         self.textEncoder = textEncoder
         self.unet = unet
         self.encoder = encoder
         self.decoder = decoder
         self.safetyChecker = safetyChecker
+        self.reduceMemory = reduceMemory
+    }
+
+    /// Load required resources for this pipeline
+    ///
+    /// If reducedMemory is true this will instead call prewarmResources instead
+    /// and let the pipeline lazily load resources as needed
+    public func loadResources() throws {
+        if reduceMemory {
+            try prewarmResources()
+        } else {
+            try textEncoder.loadResources()
+            try unet.loadResources()
+            try encoder?.loadResources()
+            try decoder.loadResources()
+            try safetyChecker?.loadResources()
+        }
+    }
+
+    /// Unload the underlying resources to free up memory
+    public func unloadResources() {
+        textEncoder.unloadResources()
+        unet.unloadResources()
+        encoder?.unloadResources()
+        decoder.unloadResources()
+        safetyChecker?.unloadResources()
+    }
+
+    // Prewarm resources one at a time
+    public func prewarmResources() throws {
+        try textEncoder.prewarmResources()
+        try unet.prewarmResources()
+        try decoder.prewarmResources()
+        try encoder?.prewarmResources()
+        try safetyChecker?.prewarmResources()
     }
     
     /// Text to image generation using stable diffusion
@@ -94,7 +147,12 @@ public class StableDiffusionPipeline {
         let hiddenStates = try hiddenStates(from: input)
 
         /// Setup schedulers
-        let scheduler = (0..<imageCount).map { _ in Scheduler(strength: input.strength, stepCount: input.stepCount) }
+        let scheduler: [Scheduler] = (0..<imageCount).map { _ in
+            switch input.scheduler {
+            case .pndmScheduler: return PNDMScheduler(strength: input.strength, stepCount: input.stepCount)
+            case .dpmSolverMultistepScheduler: return DPMSolverMultistepScheduler(strength: input.strength, stepCount: input.stepCount)
+            }
+        }
 
         // Generate random latent samples from specified seed
         var random = NumPyRandomSource(seed: input.seed)
@@ -226,6 +284,10 @@ public class StableDiffusionPipeline {
         // Encode the input prompt as well as a blank unconditioned input
         let promptEmbedding = try textEncoder.encode(input.prompt)
         let blankEmbedding = try textEncoder.encode(input.negativePrompt)
+        
+        if reduceMemory {
+            textEncoder.unloadResources()
+        }
 
         // Convert to Unet hidden state representation
         let concatEmbedding = MLShapedArray<Float32>(
@@ -303,6 +365,7 @@ public class StableDiffusionPipeline {
 
 }
 
+@available(iOS 16.2, macOS 13.1, *)
 extension StableDiffusionPipeline {
     /// Sampling progress details
     public struct Progress {

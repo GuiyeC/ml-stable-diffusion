@@ -5,33 +5,37 @@ import Foundation
 import CoreML
 
 ///  A model for encoding text
-public class TextEncoder {
+@available(iOS 16.2, macOS 13.1, *)
+public struct TextEncoder: ResourceManaging {
 
     /// Text tokenizer
     var tokenizer: BPETokenizer
 
     /// Embedding model
-    private var url: URL
-    private var config: MLModelConfiguration
-    private var _model: MLModel?
-    @discardableResult
-    func model() throws -> MLModel {
-        if let _model { return _model }
-        let model = try MLModel(contentsOf: url, configuration: config)
-        _model = model
-        return model
-    }
-    
+    var model: ManagedMLModel
+
     /// Creates text encoder which embeds a tokenized string
     ///
     /// - Parameters:
     ///   - tokenizer: Tokenizer for input text
-    ///   - url: URL for the model for encoding tokenized text
-    ///   - config: Model loading configuration
-    public init(tokenizer: BPETokenizer, url: URL, config: MLModelConfiguration) {
+    ///   - url: Location of compiled text encoding  Core ML model
+    ///   - configuration: configuration to be used when the model is loaded
+    /// - Returns: A text encoder that will lazily load its required resources when needed or requested
+    public init(tokenizer: BPETokenizer,
+                modelAt url: URL,
+                configuration: MLModelConfiguration) {
         self.tokenizer = tokenizer
-        self.url = url
-        self.config = config
+        self.model = ManagedMLModel(modelAt: url, configuration: configuration)
+    }
+
+    /// Ensure the model has been loaded into memory
+    public func loadResources() throws {
+        try model.loadResources()
+    }
+
+    /// Unload the underlying model to free up memory
+    public func unloadResources() {
+       model.unloadResources()
     }
 
     /// Encode input text/string
@@ -40,8 +44,6 @@ public class TextEncoder {
     ///     - text: Input text to be tokenized and then embedded
     ///  - Returns: Embedding representing the input text
     public func encode(_ text: String) throws -> MLShapedArray<Float32> {
-        // Make sure model is loaded
-        try model()
         // Get models expected input length
         let inputLength = inputShape.last!
 
@@ -64,7 +66,6 @@ public class TextEncoder {
     let queue = DispatchQueue(label: "textencoder.predict")
 
     func encode(ids: [Int]) throws -> MLShapedArray<Float32> {
-        let model = try model()
         let inputName = inputDescription.name
         let inputShape = inputShape
 
@@ -72,14 +73,19 @@ public class TextEncoder {
         let inputArray = MLShapedArray<Float32>(scalars: floatIds, shape: inputShape)
         let inputFeatures = try! MLDictionaryFeatureProvider(
             dictionary: [inputName: MLMultiArray(inputArray)])
-
-        let result = try queue.sync { try model.prediction(from: inputFeatures) }
+        
+        let result = try model.perform { model in
+            try model.prediction(from: inputFeatures)
+        }
+        
         let embeddingFeature = result.featureValue(for: "last_hidden_state")
         return MLShapedArray<Float32>(converting: embeddingFeature!.multiArrayValue!)
     }
 
     var inputDescription: MLFeatureDescription {
-        _model!.modelDescription.inputDescriptionsByName.first!.value
+        try! model.perform { model in
+            model.modelDescription.inputDescriptionsByName.first!.value
+        }
     }
 
     var inputShape: [Int] {

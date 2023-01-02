@@ -9,25 +9,40 @@ import Foundation
 import CoreML
 import Accelerate
 
-/// A decoder model which produces RGB images from latent samples
-public struct Encoder {
+/// A encoder model which produces RGB images from latent samples
+@available(iOS 16.2, macOS 13.1, *)
+public struct Encoder: ResourceManaging {
 
     /// VAE encoder model
-    var model: MLModel
+    var model: ManagedMLModel
 
     /// Create encoder from Core ML model
     ///
-    /// - Parameters
-    ///     - model: Core ML model for VAE encoder
-    public init(model: MLModel) {
-        self.model = model
+    /// - Parameters:
+    ///     - url: Location of compiled VAE encoder Core ML model
+    ///     - configuration: configuration to be used when the model is loaded
+    /// - Returns: A encoder that will lazily load its required resources when needed or requested
+    public init(modelAt url: URL, configuration: MLModelConfiguration) {
+        self.model = ManagedMLModel(modelAt: url, configuration: configuration)
+    }
+
+    /// Ensure the model has been loaded into memory
+    public func loadResources() throws {
+        try model.loadResources()
+    }
+
+    /// Unload the underlying model to free up memory
+    public func unloadResources() {
+       model.unloadResources()
     }
 
     /// Prediction queue
     let queue = DispatchQueue(label: "encoder.predict")
     
     var inputImageDescription: MLFeatureDescription {
-        model.modelDescription.inputDescriptionsByName["z"]!
+        try! model.perform { model in
+            model.modelDescription.inputDescriptionsByName["z"]!
+        }
     }
 
     /// The expected shape of the models latent sample input
@@ -51,8 +66,10 @@ public struct Encoder {
     public func encode(_ imageData: MLShapedArray<Float32>, random: ((Float32, Float32) -> Float32)) throws -> MLShapedArray<Float32> {
         let dict = [inputName: MLMultiArray(imageData)]
         let input = try MLDictionaryFeatureProvider(dictionary: dict)
-
-        let result = try queue.sync { try model.prediction(from: input) }
+        
+        let result = try model.perform { model in
+            try model.prediction(from: input)
+        }
         let outputName = result.featureNames.first!
         let outputValue = result.featureValue(for: outputName)!.multiArrayValue!
         let output = MLShapedArray<Float32>(outputValue)
@@ -82,7 +99,9 @@ public struct Encoder {
     }
 
     var inputName: String {
-        model.modelDescription.inputDescriptionsByName.first!.key
+        try! model.perform { model in
+            model.modelDescription.inputDescriptionsByName.first!.key
+        }
     }
 
     typealias PixelBufferPFx1 = vImage.PixelBuffer<vImage.PlanarF>

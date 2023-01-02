@@ -1,5 +1,9 @@
-// For licensing see accompanying LICENSE.md file.
-// Copyright (C) 2022 Apple Inc. All Rights Reserved.
+//
+//  PNDMScheduler.swift
+//  
+//
+//  Created by Guillermo Cique Fernández on 2/1/23.
+//
 
 import CoreML
 
@@ -8,28 +12,15 @@ import CoreML
 ///  This implementation matches:
 ///  [Hugging Face Diffusers PNDMScheduler](https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_pndm.py)
 ///
-/// It uses the pseudo linear multi-step (PLMS) method only, skipping pseudo Runge-Kutta (PRK) steps
-public final class Scheduler {
-    /// Number of diffusion steps performed during training
+/// This scheduler uses the pseudo linear multi-step (PLMS) method only, skipping pseudo Runge-Kutta (PRK) steps
+@available(iOS 16.2, macOS 13.1, *)
+public final class PNDMScheduler: Scheduler {
     public let trainStepCount: Int
-
-    /// Number of inference steps to be performed
     public let inferenceStepCount: Int
-
-    /// Training diffusion time steps index by inference time step
-    public let timeSteps: [Int]
-
-    /// Schedule of betas which controls the amount of noise added at each timestep
     public let betas: [Float]
-
-    /// 1 - betas
-    let alphas: [Float]
-
-    /// Cached cumulative product of alphas
-    let alphasCumProd: [Float]
-
-    /// Standard deviation of the initial noise distribution
-    public let initNoiseSigma: Float
+    public let alphas: [Float]
+    public let alphasCumProd: [Float]
+    public let timeSteps: [Int]
 
     // Internal state
     var counter: Int
@@ -62,15 +53,12 @@ public final class Scheduler {
         case .scaledLinear:
             self.betas = linspace(pow(betaStart, 0.5), pow(betaEnd, 0.5), trainStepCount).map({ $0 * $0 })
         }
-
         self.alphas = betas.map({ 1.0 - $0 })
-        self.initNoiseSigma = 1.0
         var alphasCumProd = self.alphas
         for i in 1..<alphasCumProd.count {
             alphasCumProd[i] *= alphasCumProd[i -  1]
         }
         self.alphasCumProd = alphasCumProd
-
         let stepsOffset = 1 // For stable diffusion
         let stepRatio = Float(trainStepCount / stepCount )
         let forwardSteps = (0..<stepCount).map {
@@ -92,7 +80,7 @@ public final class Scheduler {
         self.ets = []
         self.currentSample = nil
     }
-    
+
     /// Compute a de-noised image sample and step scheduler state
     ///
     /// - Parameters:
@@ -155,46 +143,6 @@ public final class Scheduler {
         counter += 1
         return prevSample
     }
-    
-    public func addNoise(
-        originalSample: MLShapedArray<Float32>,
-        noise: [MLShapedArray<Float32>]
-    ) -> [MLShapedArray<Float32>] {
-        let alphaProdt = alphasCumProd[timeSteps[0]]
-        let betaProdt = 1 - alphaProdt
-        let sqrtAlphaProdt = sqrt(alphaProdt)
-        let sqrtBetaProdt = sqrt(betaProdt)
-        
-        let noisySamples = noise.map {
-            weightedSum(
-                [Double(sqrtAlphaProdt), Double(sqrtBetaProdt)],
-                [originalSample, $0]
-            )
-        }
-
-        return noisySamples
-    }
-
-    /// Compute weighted sum of shaped arrays of equal shapes
-    ///
-    /// - Parameters:
-    ///   - weights: The weights each array is multiplied by
-    ///   - values: The arrays to be weighted and summed
-    /// - Returns: sum_i weights[i]*values[i]
-    func weightedSum(_ weights: [Double], _ values: [MLShapedArray<Float32>]) -> MLShapedArray<Float32> {
-        assert(weights.count > 1 && values.count == weights.count)
-        assert(values.allSatisfy({$0.scalarCount == values.first!.scalarCount}))
-        var w = Float(weights.first!)
-        var scalars = values.first!.scalars.map({ $0 * w })
-        for next in 1 ..< values.count {
-            w = Float(weights[next])
-            let nextScalars = values[next].scalars
-            for i in 0 ..< scalars.count {
-                scalars[i] += w * nextScalars[i]
-            }
-        }
-        return MLShapedArray(scalars: scalars, shape: values.first!.shape)
-    }
 
     /// Compute  sample (denoised image) at previous step given a current time step
     ///
@@ -245,34 +193,5 @@ public final class Scheduler {
         )
 
         return prevSample
-    }
-}
-
-extension Scheduler {
-    /// How to map a beta range to a sequence of betas to step over
-    public enum BetaSchedule {
-        /// Linear stepping between start and end
-        case linear
-        /// Steps using linspace(sqrt(start),sqrt(end))^2
-        case scaledLinear
-    }
-}
-
-/// Evenly spaced floats between specified interval
-///
-/// - Parameters:
-///   - start: Start of the interval
-///   - end: End of the interval
-///   - count: The number of floats to return between [*start*, *end*]
-/// - Returns: Float array with *count* elements evenly spaced between at *start* and *end*
-func linspace(_ start: Float, _ end: Float, _ count: Int) -> [Float] {
-    let scale = (end - start) / Float(count - 1)
-    return (0..<count).map { Float($0)*scale + start }
-}
-
-extension Collection {
-    /// Collection element index from the back. *self[back: 1]* yields the last element
-    public subscript(back i: Int) -> Element {
-        return self[index(endIndex, offsetBy: -i)]
     }
 }

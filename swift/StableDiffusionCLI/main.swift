@@ -8,6 +8,7 @@ import Foundation
 import StableDiffusion
 import UniformTypeIdentifiers
 
+@available(iOS 16.2, macOS 13.1, *)
 struct StableDiffusionSample: ParsableCommand {
 
     static let configuration = CommandConfiguration(
@@ -174,7 +175,8 @@ struct StableDiffusionSample: ParsableCommand {
     }
 
     func imageName(_ sample: Int, step: Int? = nil) -> String {
-        var name = String(prompt.replacingOccurrences(of: " ", with: "_").split(separator: ",").first!)
+        let fileCharLimit = 75
+        var name = prompt.prefix(fileCharLimit).replacingOccurrences(of: " ", with: "_")
         if imageCount != 1 {
             name += ".\(sample)"
         }
@@ -200,6 +202,7 @@ enum RunError: Error {
     case saving(String)
 }
 
+@available(iOS 16.2, macOS 13.1, *)
 enum ComputeUnits: String, ExpressibleByArgument, CaseIterable {
     case all, cpuAndGPU, cpuOnly, cpuAndNeuralEngine
     var asMLComputeUnits: MLComputeUnits {
@@ -212,4 +215,19 @@ enum ComputeUnits: String, ExpressibleByArgument, CaseIterable {
     }
 }
 
-StableDiffusionSample.main()
+@available(iOS 16.2, macOS 13.1, *)
+enum SchedulerOption: String, ExpressibleByArgument {
+    case pndm, dpmpp
+    var stableDiffusionScheduler: StableDiffusionScheduler {
+        switch self {
+        case .pndm: return .pndmScheduler
+        case .dpmpp: return .dpmSolverMultistepScheduler
+        }
+    }
+}
+
+if #available(iOS 16.2, macOS 13.1, *) {
+    StableDiffusionSample.main()
+} else {
+    print("Unsupported OS")
+}
