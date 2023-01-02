@@ -16,6 +16,7 @@
 
 import argparse
 import os
+import tempfile
 
 import torch
 
@@ -635,6 +636,92 @@ def convert_ldm_clip_checkpoint(checkpoint):
 
     return text_model
 
+def load_from_ckpt(checkpoint_path, original_config_file, scheduler_type="pndm", image_size=512, extract_ema=False):
+    temp_dir = tempfile.gettempdir()
+    if original_config_file is None:
+        os.system(
+            f"curl https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml --output {temp_dir}/v1-inference.yaml"
+        )
+        original_config_file = f"{temp_dir}/v1-inference.yaml"
+
+    original_config = OmegaConf.load(original_config_file)
+
+    checkpoint = torch.load(checkpoint_path)
+    checkpoint = checkpoint["state_dict"]
+
+    num_train_timesteps = original_config.model.params.timesteps
+    beta_start = original_config.model.params.linear_start
+    beta_end = original_config.model.params.linear_end
+    if scheduler_type == "pndm":
+        scheduler = PNDMScheduler(
+            beta_end=beta_end,
+            beta_schedule="scaled_linear",
+            beta_start=beta_start,
+            num_train_timesteps=num_train_timesteps,
+            skip_prk_steps=True,
+        )
+    elif scheduler_type == "lms":
+        scheduler = LMSDiscreteScheduler(beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear")
+    elif scheduler_type == "euler":
+        scheduler = EulerDiscreteScheduler(beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear")
+    elif scheduler_type == "euler-ancestral":
+        scheduler = EulerAncestralDiscreteScheduler(
+            beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear"
+        )
+    elif scheduler_type == "dpm":
+        scheduler = DPMSolverMultistepScheduler(
+            beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear"
+        )
+    elif scheduler_type == "ddim":
+        scheduler = DDIMScheduler(
+            beta_start=beta_start,
+            beta_end=beta_end,
+            beta_schedule="scaled_linear",
+            clip_sample=False,
+            set_alpha_to_one=False,
+        )
+    else:
+        raise ValueError(f"Scheduler of type {scheduler_type} doesn't exist!")
+
+    # Convert the UNet2DConditionModel model.
+    unet_config = create_unet_diffusers_config(original_config, image_size=image_size)
+    converted_unet_checkpoint = convert_ldm_unet_checkpoint(
+        checkpoint, unet_config, path=checkpoint_path, extract_ema=extract_ema
+    )
+
+    unet = UNet2DConditionModel(**unet_config)
+    unet.load_state_dict(converted_unet_checkpoint)
+
+    # Convert the VAE model.
+    vae_config = create_vae_diffusers_config(original_config, image_size=image_size)
+    converted_vae_checkpoint = convert_ldm_vae_checkpoint(checkpoint, vae_config)
+
+    vae = AutoencoderKL(**vae_config)
+    vae.load_state_dict(converted_vae_checkpoint)
+
+    # Convert the text model.
+    text_model_type = original_config.model.params.cond_stage_config.target.split(".")[-1]
+    if text_model_type == "FrozenCLIPEmbedder":
+        text_model = convert_ldm_clip_checkpoint(checkpoint)
+        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
+        safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
+        feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
+        pipe = StableDiffusionPipeline(
+            vae=vae,
+            text_encoder=text_model,
+            tokenizer=tokenizer,
+            unet=unet,
+            scheduler=scheduler,
+            safety_checker=safety_checker,
+            feature_extractor=feature_extractor,
+        )
+    else:
+        text_config = create_ldm_bert_config(original_config)
+        text_model = convert_ldm_bert_checkpoint(checkpoint, text_config)
+        tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        pipe = LDMTextToImagePipeline(vqvae=vae, bert=text_model, tokenizer=tokenizer, unet=unet, scheduler=scheduler)
+    
+    return pipe
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -676,88 +763,6 @@ if __name__ == "__main__":
     parser.add_argument("--dump_path", default=None, type=str, required=True, help="Path to the output model.")
 
     args = parser.parse_args()
-
-    if args.original_config_file is None:
-        os.system(
-            "wget https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml"
-        )
-        args.original_config_file = "./v1-inference.yaml"
-
-    original_config = OmegaConf.load(args.original_config_file)
-
-    checkpoint = torch.load(args.checkpoint_path)
-    checkpoint = checkpoint["state_dict"]
-
-    num_train_timesteps = original_config.model.params.timesteps
-    beta_start = original_config.model.params.linear_start
-    beta_end = original_config.model.params.linear_end
-    if args.scheduler_type == "pndm":
-        scheduler = PNDMScheduler(
-            beta_end=beta_end,
-            beta_schedule="scaled_linear",
-            beta_start=beta_start,
-            num_train_timesteps=num_train_timesteps,
-            skip_prk_steps=True,
-        )
-    elif args.scheduler_type == "lms":
-        scheduler = LMSDiscreteScheduler(beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear")
-    elif args.scheduler_type == "euler":
-        scheduler = EulerDiscreteScheduler(beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear")
-    elif args.scheduler_type == "euler-ancestral":
-        scheduler = EulerAncestralDiscreteScheduler(
-            beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear"
-        )
-    elif args.scheduler_type == "dpm":
-        scheduler = DPMSolverMultistepScheduler(
-            beta_start=beta_start, beta_end=beta_end, beta_schedule="scaled_linear"
-        )
-    elif args.scheduler_type == "ddim":
-        scheduler = DDIMScheduler(
-            beta_start=beta_start,
-            beta_end=beta_end,
-            beta_schedule="scaled_linear",
-            clip_sample=False,
-            set_alpha_to_one=False,
-        )
-    else:
-        raise ValueError(f"Scheduler of type {args.scheduler_type} doesn't exist!")
-
-    # Convert the UNet2DConditionModel model.
-    unet_config = create_unet_diffusers_config(original_config, image_size=args.image_size)
-    converted_unet_checkpoint = convert_ldm_unet_checkpoint(
-        checkpoint, unet_config, path=args.checkpoint_path, extract_ema=args.extract_ema
-    )
-
-    unet = UNet2DConditionModel(**unet_config)
-    unet.load_state_dict(converted_unet_checkpoint)
-
-    # Convert the VAE model.
-    vae_config = create_vae_diffusers_config(original_config, image_size=args.image_size)
-    converted_vae_checkpoint = convert_ldm_vae_checkpoint(checkpoint, vae_config)
-
-    vae = AutoencoderKL(**vae_config)
-    vae.load_state_dict(converted_vae_checkpoint)
-
-    # Convert the text model.
-    text_model_type = original_config.model.params.cond_stage_config.target.split(".")[-1]
-    if text_model_type == "FrozenCLIPEmbedder":
-        text_model = convert_ldm_clip_checkpoint(checkpoint)
-        tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14")
-        safety_checker = StableDiffusionSafetyChecker.from_pretrained("CompVis/stable-diffusion-safety-checker")
-        feature_extractor = AutoFeatureExtractor.from_pretrained("CompVis/stable-diffusion-safety-checker")
-        pipe = StableDiffusionPipeline(
-            vae=vae,
-            text_encoder=text_model,
-            tokenizer=tokenizer,
-            unet=unet,
-            scheduler=scheduler,
-            safety_checker=safety_checker,
-            feature_extractor=feature_extractor,
-        )
-    else:
-        text_config = create_ldm_bert_config(original_config)
-        text_model = convert_ldm_bert_checkpoint(checkpoint, text_config)
-        tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
-        pipe = LDMTextToImagePipeline(vqvae=vae, bert=text_model, tokenizer=tokenizer, unet=unet, scheduler=scheduler)
+    pipe = load_from_ckpt(args.checkpoint_path, args.original_config_file, args.scheduler_type, args.image_size, args.extract_ema)
 
     pipe.save_pretrained(args.dump_path)

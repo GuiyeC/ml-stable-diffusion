@@ -4,6 +4,7 @@
 #
 
 from python_coreml_stable_diffusion import unet
+from python_coreml_stable_diffusion import convert_original_stable_diffusion_to_diffusers
 
 import argparse
 from collections import OrderedDict, defaultdict
@@ -20,6 +21,7 @@ logger.setLevel(logging.INFO)
 
 import numpy as np
 import os
+import tempfile
 from python_coreml_stable_diffusion import chunk_mlprogram
 import requests
 import shutil
@@ -88,6 +90,9 @@ def report_correctness(original_outputs, final_outputs, log_prefix):
 def _get_out_path(args, submodule_name):
     fname = f"Stable_Diffusion_version_{args.model_version}_{submodule_name}.mlpackage"
     fname = fname.replace("/", "_")
+    if args.clean_up_mlpackages:
+        temp_dir = tempfile.gettempdir()
+        return os.path.join(temp_dir, fname)
     return os.path.join(args.o, fname)
 
 
@@ -177,15 +182,15 @@ def _compile_coreml_model(source_model_path, output_dir, final_name):
     return target_path
 
 
-def bundle_resources_for_swift_cli(args):
+def bundle_resources_for_guernika(args):
     """
     - Compiles Core ML models from mlpackage into mlmodelc format
     - Download tokenizer resources for the text encoder
     """
-    resources_dir = os.path.join(args.o, "Resources")
+    resources_dir = os.path.join(args.o, args.resources_dir_name.replace("/", "_"))
     if not os.path.exists(resources_dir):
         os.makedirs(resources_dir, exist_ok=True)
-        logger.info(f"Created {resources_dir} for Swift CLI assets")
+        logger.info(f"Created {resources_dir} for Guernika assets")
 
     # Compile model using coremlcompiler (Significantly reduces the load time for unet)
     for source_name, target_name in [("text_encoder", "TextEncoder"),
@@ -219,6 +224,15 @@ def bundle_resources_for_swift_cli(args):
 
     return resources_dir
 
+import traceback
+def remove_mlpackages(args):
+    for package_name in ["text_encoder", "vae_decoder", "vae_encoder", "unet", "unet_chunk1", "unet_chunk2", "safety_checker"]:
+        package_path = _get_out_path(args, package_name)
+        try:
+            if os.path.exists(package_path):
+                shutil.rmtree(package_path)
+        except:
+            traceback.print_exc()
 
 def convert_text_encoder(pipe, args):
     """ Converts the text encoder component of Stable Diffusion
@@ -661,7 +675,7 @@ def convert_unet(pipe, args):
         # Set the output descriptions
         coreml_unet.output_description["noise_pred"] = \
             "Same shape and dtype as the `sample` input. " \
-            "The predicted noise to faciliate the reverse diffusion (denoising) process"
+            "The predicted noise to facilitate the reverse diffusion (denoising) process"
 
         _save_mlpackage(coreml_unet, out_path)
         logger.info(f"Saved unet into {out_path}")
@@ -878,6 +892,9 @@ def main(args):
     if args.model_location:
         logger.info(f"Initializing StableDiffusionPipeline from {args.model_location}..")
         pipe = StableDiffusionPipeline.from_pretrained(args.model_location, local_files_only=True)
+    elif args.checkpoint_path:
+        logger.info(f"Initializing StableDiffusionPipeline from {args.checkpoint_path}..")
+        pipe = convert_original_stable_diffusion_to_diffusers.load_from_ckpt(args.checkpoint_path, args.original_config_file)
     else:
         logger.info(f"Initializing StableDiffusionPipeline with {args.model_version}..")
         pipe = StableDiffusionPipeline.from_pretrained(args.model_version, use_auth_token=True)
@@ -910,10 +927,15 @@ def main(args):
         convert_safety_checker(pipe, args)
         logger.info("Converted safety_checker")
 
-    if args.bundle_resources_for_swift_cli:
-        logger.info("Bundling resources for the Swift CLI")
-        bundle_resources_for_swift_cli(args)
-        logger.info("Bundled resources for the Swift CLI")
+    if args.bundle_resources_for_guernika:
+        logger.info("Bundling resources for Guernika")
+        bundle_resources_for_guernika(args)
+        logger.info("Bundled resources for Guernika")
+
+    if args.clean_up_mlpackages:
+        logger.info("Cleaning up MLPackages")
+        remove_mlpackages(args)
+        logger.info("MLPackages removed")
 
     if args.quantize_weights_to_8bits:
         # Note: Not recommended, significantly degrades generated image quality
@@ -943,6 +965,15 @@ def parser_spec():
         default=None,
         help=
         "The local pre-trained model checkpoint and configuration to restore."
+    )
+    parser.add_argument(
+        "--checkpoint_path", default=None, type=str, required=True, help="Path to the checkpoint to convert."
+    )
+    parser.add_argument(
+        "--original_config_file",
+        default=None,
+        type=str,
+        help="The YAML config file corresponding to the original architecture of the CKPT.",
     )
     parser.add_argument("--compute-unit",
                         choices=tuple(cu
@@ -997,14 +1028,23 @@ def parser_spec():
          "Not recommended as the generated image quality degraded significantly after 8-bit weight quantization"
          ))
 
-    # Swift CLI Resource Bundling
+    # Guernika Resource Bundling
     parser.add_argument(
-        "--bundle-resources-for-swift-cli",
+        "--bundle-resources-for-guernika",
         action="store_true",
         help=
-        ("If specified, creates a resources directory compatible with the sample Swift CLI. "
+        ("If specified, creates a resources directory compatible with Guernika. "
          "It compiles all four models and adds them to a StableDiffusionResources directory "
          "along with a `vocab.json` and `merges.txt` for the text tokenizer"))
+    parser.add_argument(
+        "--resources-dir-name",
+        default="Resources",
+        type=str,
+        help="Name for the resources directory where the Guernika model will be located.")
+    parser.add_argument(
+        "--clean-up-mlpackages",
+        action="store_true",
+        help="Removes mlpackages after a successful convesion.")
     parser.add_argument(
         "--text-encoder-vocabulary-url",
         default=
@@ -1022,5 +1062,3 @@ def parser_spec():
 if __name__ == "__main__":
     parser = parser_spec()
     args = parser.parse_args()
-
-    main(args)
