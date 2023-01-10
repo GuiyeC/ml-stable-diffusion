@@ -12,6 +12,8 @@ class Namespace:
 import os
 import traceback
 import webbrowser
+import subprocess
+import multiprocessing
 import tkinter as tk
 from tkinter import *
 from tkinter import filedialog
@@ -50,7 +52,23 @@ import time
 def is_guernika_installed():
     return os.path.exists("/Applications/Guernika.app")
 
+def is_coremlcompiler_installed():
+    try:
+        print(subprocess.check_output(['xcrun', '--version']))
+    except:
+        return False
+    try:
+        print(subprocess.check_output(['xcrun', 'coremlcompiler', 'version']))
+    except:
+        return False
+    return True
+
 if __name__ == "__main__":
+    # Pyinstaller fix
+    multiprocessing.freeze_support()
+    
+    coremlcompiler_installed = is_coremlcompiler_installed()
+    
     window = Tk()
     window.title("Guernika Model Converter")
     window.geometry('+540+360')
@@ -88,7 +106,7 @@ if __name__ == "__main__":
             ckpt_label.configure(text=ckpt_location)
             model_location = None
             version_entry.delete(0, END)
-    ckpt_label = Label(window)
+    ckpt_label = Label(window, text="Defaults to v1-inference.yaml\nFor custom YAML, give it the same name and\nplace it on the same folder as the CKPT\n(model.yaml, model.ckpt)", justify="left")
     ckpt_label["state"] = DISABLED
     ckpt_label.grid(row=3, column=0, columnspan=3, padx=(16, 8), sticky='W')
     ckpt_button = Button(window, text="Select CKPT", command=convert_ckpt)
@@ -182,6 +200,16 @@ if __name__ == "__main__":
         global ckpt_location
         global model_location
         global selected_compute_unit
+        global coremlcompiler_installed
+        
+        if not coremlcompiler_installed:
+            # check again
+            coremlcompiler_installed = is_coremlcompiler_installed()
+            if coremlcompiler_installed:
+                xcode_label.grid_remove()
+            else:
+                mb.showerror(title = "Error", message = "CoreMLCompiler not available.\nMake sure you have Xcode installed and you run \"sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer/\" on a Terminal.")
+                return
         
         model_version = version_entry.get().strip()
         if ckpt_location:
@@ -226,7 +254,7 @@ if __name__ == "__main__":
             torch2coreml.main(args)
             mb.showinfo(title = "Success", message = "Model successfully converted")
         except:
-            mb.showerror(title = "Error", message = "An error occurred during conversion")
+            mb.showerror(title = "Error", message = f"An error occurred during conversion\n{traceback.format_exc()}")
             traceback.print_exc()
         finally:
             show_converting(False)
@@ -236,6 +264,10 @@ if __name__ == "__main__":
         guernika_button.grid(row=11, column=1, padx=16, pady=(24, 24))
     convert_button = Button(window, text="Convert to Guernika", command=convert_model)
     add_convert_button()
+            
+    if not coremlcompiler_installed:
+        xcode_label = Label(window, text="CoreMLCompiler not available!\nMake sure you have Xcode installed before starting conversion.")
+        xcode_label.grid(row=13, column=0, columnspan=5, padx=16, pady=(0, 24))
     
     window.minsize(500, 50)
     window.resizable(False, False)

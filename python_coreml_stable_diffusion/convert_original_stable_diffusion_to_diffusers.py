@@ -639,15 +639,20 @@ def convert_ldm_clip_checkpoint(checkpoint):
 def load_from_ckpt(checkpoint_path, original_config_file, scheduler_type="pndm", image_size=512, extract_ema=False):
     temp_dir = tempfile.gettempdir()
     if original_config_file is None:
-        os.system(
-            f"curl https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml --output {temp_dir}/v1-inference.yaml"
-        )
-        original_config_file = f"{temp_dir}/v1-inference.yaml"
+        possible_yaml = checkpoint_path.rsplit(".", 1)[0] + '.yaml'
+        if os.path.exists(possible_yaml):
+            original_config_file = possible_yaml
+        else:
+            os.system(
+                f"curl https://raw.githubusercontent.com/CompVis/stable-diffusion/main/configs/stable-diffusion/v1-inference.yaml --output {temp_dir}/v1-inference.yaml"
+            )
+            original_config_file = f"{temp_dir}/v1-inference.yaml"
 
     original_config = OmegaConf.load(original_config_file)
 
     checkpoint = torch.load(checkpoint_path)
-    checkpoint = checkpoint["state_dict"]
+    if "state_dict" in checkpoint:
+        checkpoint = checkpoint["state_dict"]
 
     num_train_timesteps = original_config.model.params.timesteps
     beta_start = original_config.model.params.linear_start

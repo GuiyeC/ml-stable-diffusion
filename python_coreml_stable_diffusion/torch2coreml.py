@@ -967,10 +967,10 @@ def parser_spec():
         "The local pre-trained model checkpoint and configuration to restore."
     )
     parser.add_argument(
-        "--checkpoint_path", default=None, type=str, required=True, help="Path to the checkpoint to convert."
+        "--checkpoint-path", default=None, type=str, required=True, help="Path to the checkpoint to convert."
     )
     parser.add_argument(
-        "--original_config_file",
+        "--original-config-file",
         default=None,
         type=str,
         help="The YAML config file corresponding to the original architecture of the CKPT.",
