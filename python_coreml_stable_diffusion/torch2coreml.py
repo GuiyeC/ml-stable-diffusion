@@ -471,7 +471,7 @@ def convert_vae_decoder(pipe, args):
 def convert_vae_encoder(pipe, args):
     """ Converts the VAE Encoder component of Stable Diffusion
     """
-    out_path = _get_out_path(args, "vae_encoder2")
+    out_path = _get_out_path(args, "vae_encoder")
     if os.path.exists(out_path):
         logger.info(
             f"`vae_encoder` already exists at {out_path}, skipping conversion."
