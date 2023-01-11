@@ -114,7 +114,7 @@ if __name__ == "__main__":
     
     # convert modules
     def convert_unet_switched():
-        chunk_unet_check["state"] = NORMAL if convert_unet.get() == 1 else DISABLED
+        chunk_unet_check["state"] = NORMAL if convert_unet_value.get() == 1 else DISABLED
     
     convert_options_label = Label(window, text="Convert modules:")
     convert_options_label.grid(row=4, column=0, columnspan=5, padx=16, pady=(12, 0), sticky='W')
@@ -144,20 +144,30 @@ if __name__ == "__main__":
     convert_safety_checker_check = Checkbutton(window, text='Safety checker',variable=convert_safety_checker_value, onvalue=1, offvalue=0)
     convert_safety_checker_check.grid(row=6, column=3, padx=16, pady=4, sticky='W')
     
+    # output size
+    output_size_label = Label(window, text="Output size:")
+    output_size_label.grid(row=7, column=0, columnspan=5, padx=16, pady=(12, 0), sticky='W')
+        
+    width_entry = PlaceholderEntry(window, placeholder="Width")
+    width_entry.grid(row=8, column=1, padx=(16,0), pady=4, sticky='E')
+    sizedivider_label = Label(window, text="X")
+    sizedivider_label.grid(row=8, column=2, padx=6)
+    height_entry = PlaceholderEntry(window, placeholder="Height")
+    height_entry.grid(row=8, column=3, padx=(0,16), pady=4, sticky='W')
     
     # compute units
     selected_compute_unit = StringVar(window)
     selected_compute_unit.set('CPU_AND_NE')
     compute_units_label = Label(window, text="Compute units:")
-    compute_units_label.grid(row=7, column=0, columnspan=5, padx=16, pady=(12, 0), sticky='W')
+    compute_units_label.grid(row=9, column=0, columnspan=5, padx=16, pady=(12, 0), sticky='W')
     
     cpu_and_ne_check = Radiobutton(window, text='CPU and NE', variable=selected_compute_unit, value='CPU_AND_NE')
     cpu_and_ne_check.select()
-    cpu_and_ne_check.grid(row=8, column=1, padx=16, pady=4, sticky='W')
+    cpu_and_ne_check.grid(row=10, column=1, padx=16, pady=4, sticky='W')
     cpu_and_gpu_check = Radiobutton(window, text='CPU and GPU', variable=selected_compute_unit, value='CPU_AND_GPU')
-    cpu_and_gpu_check.grid(row=8, column=2, padx=16, pady=4, sticky='W')
+    cpu_and_gpu_check.grid(row=10, column=2, padx=16, pady=4, sticky='W')
     all_compute_units_check = Radiobutton(window, text='All', variable=selected_compute_unit, value='ALL')
-    all_compute_units_check.grid(row=8, column=3, padx=16, pady=4, sticky='W')
+    all_compute_units_check.grid(row=10, column=3, padx=16, pady=4, sticky='W')
     
             
     progress_label = Label(window, text="Converting model, this may take a while (15-20 minutes).")
@@ -165,14 +175,14 @@ if __name__ == "__main__":
     
     def add_convert_button():
         if not is_guernika_installed():
-            convert_button.grid(row=11, column=3, padx=16, pady=(24, 24))
+            convert_button.grid(row=18, column=3, padx=16, pady=(24, 24))
         else:
-            convert_button.grid(row=11, column=1, columnspan=3, padx=16, pady=(24, 24))
+            convert_button.grid(row=18, column=1, columnspan=3, padx=16, pady=(24, 24))
     
     def show_converting(is_converting):
         if is_converting:
-            progress_label.grid(row=9, column=0, columnspan=5, padx=16, pady=(16,4))
-            progressbar.grid(row=10, column=0, columnspan=5, padx=16, pady=(4,24))
+            progress_label.grid(row=16, column=0, columnspan=5, padx=16, pady=(16,4))
+            progressbar.grid(row=17, column=0, columnspan=5, padx=16, pady=(4,24))
             progressbar.start()
             convert_button.grid_remove()
         else:
@@ -222,9 +232,25 @@ if __name__ == "__main__":
         if not model_version:
             mb.showerror(title = "Error", message = "You need to choose a model to convert")
             return
+        
+        output_h = None
+        output_w = None
+                
+        try:
+            output_h_str = height_entry.get().strip()
+            if output_h_str:
+                output_h = int(output_h_str)
+            output_w_str = width_entry.get().strip()
+            if output_w_str:
+                output_w = int(output_w_str)
+        except:
+            mb.showerror(title = "Error", message = "Invalid output size")
+            return
+
         output_folder = filedialog.askdirectory(parent=window, title='Where do you want to save the model?')
         if not output_folder.strip():
             return
+        
         args = Namespace(
             attention_implementation='ORIGINAL' if selected_compute_unit.get() == 'ALL' else 'SPLIT_EINSUM',
             bundle_resources_for_guernika=True,
@@ -236,8 +262,8 @@ if __name__ == "__main__":
             convert_unet=convert_unet_value.get() == 1,
             convert_vae_decoder=convert_decoder_value.get() == 1,
             convert_vae_encoder=convert_encoder_value.get() == 1,
-            latent_h=None,
-            latent_w=None,
+            output_h=output_h,
+            output_w=output_w,
             model_location=None if not model_location else model_location,
             model_version=model_version,
             checkpoint_path=None if not ckpt_location else ckpt_location,
@@ -261,13 +287,13 @@ if __name__ == "__main__":
         
     if not is_guernika_installed():
         guernika_button = Button(window, text="Install Guernika", command=open_appstore)
-        guernika_button.grid(row=11, column=1, padx=16, pady=(24, 24))
+        guernika_button.grid(row=18, column=1, padx=16, pady=(24, 24))
     convert_button = Button(window, text="Convert to Guernika", command=convert_model)
     add_convert_button()
             
     if not coremlcompiler_installed:
         xcode_label = Label(window, text="CoreMLCompiler not available!\nMake sure you have Xcode installed before starting conversion.")
-        xcode_label.grid(row=13, column=0, columnspan=5, padx=16, pady=(0, 24))
+        xcode_label.grid(row=20, column=0, columnspan=5, padx=16, pady=(0, 24))
     
     window.minsize(500, 50)
     window.resizable(False, False)

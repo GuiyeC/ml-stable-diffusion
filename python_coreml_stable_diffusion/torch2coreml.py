@@ -398,12 +398,15 @@ def convert_vae_decoder(pipe, args):
         raise RuntimeError(
             "convert_unet() deletes pipe.unet to save RAM. "
             "Please use convert_vae_decoder() before convert_unet()")
-
+    
+    vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
+    height = int((args.output_h or pipe.vae.config.sample_size) / vae_scale_factor)
+    width = int((args.output_w or pipe.vae.config.sample_size) / vae_scale_factor)
     z_shape = (
         1,  # B
         pipe.vae.latent_channels,  # C
-        args.latent_h or pipe.unet.config.sample_size,  # H
-        args.latent_w or pipe.unet.config.sample_size,  # w
+        height,  # H
+        width,  # w
     )
 
     sample_vae_decoder_inputs = {
@@ -482,12 +485,15 @@ def convert_vae_encoder(pipe, args):
         raise RuntimeError(
             "convert_unet() deletes pipe.unet to save RAM. "
             "Please use convert_vae_encoder() before convert_unet()")
-
+    
+    height = args.output_h or pipe.vae.config.sample_size
+    width = args.output_w or pipe.vae.config.sample_size
+    
     z_shape = (
         1,  # B
         3,  # C
-        512,  # H
-        512,  # w
+        height,  # H
+        width,  # w
     )
 
     sample_vae_encoder_inputs = {
@@ -580,11 +586,15 @@ def convert_unet(pipe, args):
 
         # Prepare sample input shapes and values
         batch_size = 2  # for classifier-free guidance
+        vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
+        height = int((args.output_h or pipe.vae.config.sample_size) / vae_scale_factor)
+        width = int((args.output_w or pipe.vae.config.sample_size) / vae_scale_factor)
+        
         sample_shape = (
             batch_size,                    # B
             pipe.unet.config.in_channels,  # C
-            pipe.unet.config.sample_size,  # H
-            pipe.unet.config.sample_size,  # W
+            height,  # H
+            width,  # W
         )
 
         if not hasattr(pipe, "text_encoder"):
@@ -718,11 +728,14 @@ def convert_safety_checker(pipe, args):
             f"`safety_checker` already exists at {out_path}, skipping conversion."
         )
         return
+    
+    height = args.output_h or pipe.vae.config.sample_size
+    width = args.output_w or pipe.vae.config.sample_size
 
     sample_image = np.random.randn(
         1,  # B
-        pipe.vae.config.sample_size,  # H
-        pipe.vae.config.sample_size,  # w
+        height,  # H
+        width,  # w
         3  # C
     ).astype(np.float32)
 
@@ -884,6 +897,16 @@ def convert_safety_checker(pipe, args):
     del traced_safety_checker, coreml_safety_checker, pipe.safety_checker
     gc.collect()
 
+def check_output_size(pipe, args):
+    vae_scale_factor = 2 ** (len(pipe.vae.config.block_out_channels) - 1)
+    if args.output_h and (args.output_h % vae_scale_factor) != 0:
+        raise RuntimeError(f"Invalid output height. Must be divisible by {vae_scale_factor}")
+    if args.output_w and (args.output_w % vae_scale_factor) != 0:
+        raise RuntimeError(f"Invalid output width. Must be divisible by {vae_scale_factor}")
+        
+    height = args.output_h or pipe.vae.config.sample_size
+    width = args.output_w or pipe.vae.config.sample_size
+    logger.info(f"Output size will be {width}x{height}")
 
 def main(args):
     os.makedirs(args.o, exist_ok=True)
@@ -899,8 +922,9 @@ def main(args):
         logger.info(f"Initializing StableDiffusionPipeline with {args.model_version}..")
         pipe = StableDiffusionPipeline.from_pretrained(args.model_version, use_auth_token=True)
     
-    logger.info("Done.")
-
+    logger.info(f"Done.")
+    check_output_size(pipe, args)
+    
     # Convert models
     if args.convert_vae_decoder:
         logger.info("Converting vae_decoder")
@@ -981,18 +1005,18 @@ def parser_spec():
                         default="ALL")
 
     parser.add_argument(
-        "--latent-h",
+        "--output-h",
         type=int,
         default=None,
         help=
-        "The spatial resolution (number of rows) of the latent space. `Defaults to pipe.unet.config.sample_size`",
+        "The desired output height of the generated image. Should be multiple of vae_scale_factor. `Defaults to pipe's sample size`",
     )
     parser.add_argument(
-        "--latent-w",
+        "--output-w",
         type=int,
         default=None,
         help=
-        "The spatial resolution (number of cols) of the latent space. `Defaults to pipe.unet.config.sample_size`",
+        "The desired output width of the generated image. Should be multiple of vae_scale_factor. `Defaults to pipe's sample size`",
     )
     parser.add_argument(
         "--attention-implementation",
