@@ -249,6 +249,7 @@ if __name__ == "__main__":
 
         output_folder = filedialog.askdirectory(parent=window, title='Where do you want to save the model?')
         if not output_folder.strip():
+            mb.showerror(title = "Error", message = "Invalid output folder")
             return
         
         args = Namespace(
