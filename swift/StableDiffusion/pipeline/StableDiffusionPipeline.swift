@@ -55,17 +55,10 @@ public class StableDiffusionPipeline: ResourceManaging {
     }
     
     /// Reports whether this pipeline can perform image to image
-    public var canInpaint: Bool {
-        encoder != nil && unet.latentSampleShape[1] == 9
-    }
+    public var canInpaint: Bool = false
     
     /// Expected encoder input size
-    public var expectedInputSize: CGSize? {
-        guard let encoder else { return nil }
-        let width: Int = encoder.inputImageShape[3]
-        let height: Int = encoder.inputImageShape[2]
-        return CGSize(width: width, height: height)
-    }
+    public var expectedInputSize: CGSize?
 
     /// Creates a pipeline using the specified models and tokenizer
     ///
@@ -120,9 +113,9 @@ public class StableDiffusionPipeline: ResourceManaging {
     // Prewarm resources one at a time
     public func prewarmResources() throws {
         try textEncoder.prewarmResources()
-        try unet.prewarmResources()
+        expectedInputSize = try encoder?.prewarmResources()
+        canInpaint = try unet.prewarmResources() && encoder != nil
         try decoder.prewarmResources()
-        try encoder?.prewarmResources()
         try safetyChecker?.prewarmResources()
     }
     

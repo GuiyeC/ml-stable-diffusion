@@ -35,6 +35,19 @@ public struct Encoder: ResourceManaging {
     public func unloadResources() {
        model.unloadResources()
     }
+    
+    /// Request resources are pre-warmed by loading and unloading
+    func prewarmResources() throws -> CGSize {
+        try loadResources()
+    
+        let width: Int = inputImageShape[3]
+        let height: Int = inputImageShape[2]
+        let expectedInputSize: CGSize = CGSize(width: width, height: height)
+        
+        unloadResources()
+        
+        return expectedInputSize
+    }
 
     /// Prediction queue
     let queue = DispatchQueue(label: "encoder.predict")

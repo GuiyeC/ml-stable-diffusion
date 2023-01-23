@@ -50,12 +50,17 @@ public struct Unet: ResourceManaging {
     }
 
     /// Pre-warm resources
-    public func prewarmResources() throws {
+    public func prewarmResources() throws -> Bool {
         // Override default to pre-warm each model
-        for model in models {
+        let model = models.first
+        try model?.loadResources()
+        let canInpaint = latentSampleShape[1] == 9
+        model?.unloadResources()
+        for model in models.dropFirst() {
             try model.loadResources()
             model.unloadResources()
         }
+        return canInpaint
     }
 
     var latentSampleDescription: MLFeatureDescription {
