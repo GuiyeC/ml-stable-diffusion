@@ -39,13 +39,8 @@ public struct Encoder: ResourceManaging {
     /// Request resources are pre-warmed by loading and unloading
     func prewarmResources() throws -> CGSize {
         try loadResources()
-    
-        let width: Int = inputImageShape[3]
-        let height: Int = inputImageShape[2]
-        let expectedInputSize: CGSize = CGSize(width: width, height: height)
-        
+        let expectedInputSize = expectedInputSize
         unloadResources()
-        
         return expectedInputSize
     }
 
@@ -61,6 +56,12 @@ public struct Encoder: ResourceManaging {
     /// The expected shape of the models latent sample input
     public var inputImageShape: [Int] {
         inputImageDescription.multiArrayConstraint!.shape.map { $0.intValue }
+    }
+    
+    public var expectedInputSize: CGSize {
+        let width: Int = inputImageShape[3]
+        let height: Int = inputImageShape[2]
+        return CGSize(width: width, height: height)
     }
 
     /// Encode image into latent samples

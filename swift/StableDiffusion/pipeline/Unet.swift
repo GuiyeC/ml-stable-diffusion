@@ -54,7 +54,7 @@ public struct Unet: ResourceManaging {
         // Override default to pre-warm each model
         let model = models.first
         try model?.loadResources()
-        let canInpaint = latentSampleShape[1] == 9
+        let canInpaint = canInpaint
         model?.unloadResources()
         for model in models.dropFirst() {
             try model.loadResources()
@@ -72,6 +72,10 @@ public struct Unet: ResourceManaging {
     /// The expected shape of the models latent sample input
     public var latentSampleShape: [Int] {
         latentSampleDescription.multiArrayConstraint!.shape.map { $0.intValue }
+    }
+    
+    public var canInpaint: Bool {
+        latentSampleShape[1] == 9
     }
 
     /// Batch prediction noise from latent samples

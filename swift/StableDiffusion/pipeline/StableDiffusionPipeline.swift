@@ -94,8 +94,10 @@ public class StableDiffusionPipeline: ResourceManaging {
             try prewarmResources()
         } else {
             try textEncoder.loadResources()
-            try unet.loadResources()
             try encoder?.loadResources()
+            expectedInputSize = encoder?.expectedInputSize
+            try unet.loadResources()
+            canInpaint = unet.canInpaint && encoder != nil
             try decoder.loadResources()
             try safetyChecker?.loadResources()
         }
@@ -104,8 +106,8 @@ public class StableDiffusionPipeline: ResourceManaging {
     /// Unload the underlying resources to free up memory
     public func unloadResources() {
         textEncoder.unloadResources()
-        unet.unloadResources()
         encoder?.unloadResources()
+        unet.unloadResources()
         decoder.unloadResources()
         safetyChecker?.unloadResources()
     }
