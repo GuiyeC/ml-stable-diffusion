@@ -74,8 +74,8 @@ app = BUNDLE(
     bundle_identifier='com.guiyec.GuernikaModelConverter',
     info_plist={
         'CFBundleDisplayName': 'Guernika Model Converter',
-        'CFBundleVersion': '1.4.1',
-        'CFBundleShortVersionString': '1.4.1',
+        'CFBundleVersion': '1.5.0',
+        'CFBundleShortVersionString': '1.5.0',
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
         'NSRequiresAquaSystemAppearance': 'No',

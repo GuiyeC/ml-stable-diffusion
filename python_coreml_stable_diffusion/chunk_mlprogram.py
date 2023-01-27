@@ -26,6 +26,7 @@ logger.setLevel(logging.INFO)
 
 import numpy as np
 import os
+import tempfile
 from python_coreml_stable_diffusion import torch2coreml
 import shutil
 import time
@@ -296,6 +297,10 @@ def main(args):
     # Save the chunked models to disk
     out_path_chunk1 = os.path.join(args.o, name + "_chunk1.mlpackage")
     out_path_chunk2 = os.path.join(args.o, name + "_chunk2.mlpackage")
+    if args.clean_up_mlpackages:
+        temp_dir = tempfile.gettempdir()
+        out_path_chunk1 = os.path.join(temp_dir, name + "_chunk1.mlpackage")
+        out_path_chunk2 = os.path.join(temp_dir, name + "_chunk2.mlpackage")
 
     logger.info(
         f"Saved chunks in {args.o} with the suffix _chunk1.mlpackage and _chunk2.mlpackage"
@@ -319,6 +324,10 @@ if __name__ == "__main__":
         help=
         "Path to output directory where the two model chunks should be saved.",
     )
+    parser.add_argument(
+        "--clean-up-mlpackages",
+        action="store_true",
+        help="Removes mlpackages after a successful convesion.")
     parser.add_argument(
         "--remove-original",
         action="store_true",
