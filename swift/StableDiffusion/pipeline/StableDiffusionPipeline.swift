@@ -57,6 +57,8 @@ public class StableDiffusionPipeline: ResourceManaging {
     /// Reports whether this pipeline can perform image to image
     public var canInpaint: Bool = false
     
+    public var takesInstructions: Bool = false
+    
     /// Expected encoder input size
     public var expectedInputSize: CGSize?
 
@@ -98,6 +100,7 @@ public class StableDiffusionPipeline: ResourceManaging {
             expectedInputSize = encoder?.expectedInputSize
             try unet.loadResources()
             canInpaint = unet.canInpaint && encoder != nil
+            takesInstructions = unet.takesInstructions && encoder != nil
             try decoder.loadResources()
             try safetyChecker?.loadResources()
         }
@@ -116,7 +119,9 @@ public class StableDiffusionPipeline: ResourceManaging {
     public func prewarmResources() throws {
         try textEncoder.prewarmResources()
         expectedInputSize = try encoder?.prewarmResources()
-        canInpaint = try unet.prewarmResources() && encoder != nil
+        let (canInpaint, takesInstructions) = try unet.prewarmResources()
+        self.canInpaint = canInpaint && encoder != nil
+        self.takesInstructions = takesInstructions && encoder != nil
         try decoder.prewarmResources()
         try safetyChecker?.prewarmResources()
     }
@@ -152,6 +157,7 @@ public class StableDiffusionPipeline: ResourceManaging {
         // Generate random latent samples from specified seed
         var random = NumPyRandomSource(seed: input.seed)
         var latents = try generateLatentSamples(imageCount, input: input, random: &random, scheduler: scheduler[0])
+        let imageLatent = try generateImageLatent(imageCount, input: input, random: &random, scheduler: scheduler[0])
         // Prepare mask only for inpainting
         let inpaintingLatents = try prepareMaskLatents(input: input, random: &random)
 
@@ -159,14 +165,23 @@ public class StableDiffusionPipeline: ResourceManaging {
         for (step,t) in scheduler[0].timeSteps.enumerated() {
             // Expand the latents for classifier-free guidance
             // and input to the Unet noise prediction model
-            var latentUnetInput = latents.map {
-                MLShapedArray<Float32>(concatenating: [$0, $0], alongAxis: 0)
-            }
-            
-            // Concat mask in case we are doing inpainting
-            if let (mask, maskedImage) = inpaintingLatents {
+            var latentUnetInput: [MLShapedArray<Float32>]
+            if let imageLatent {
+                latentUnetInput = latents.map {
+                    MLShapedArray<Float32>(concatenating: [$0, $0, $0], alongAxis: 0)
+                }
                 latentUnetInput = latentUnetInput.map {
-                    MLShapedArray<Float32>(concatenating: [$0, mask, maskedImage], alongAxis: 1)
+                    MLShapedArray<Float32>(concatenating: [$0, imageLatent], alongAxis: 1)
+                }
+            } else {
+                latentUnetInput = latents.map {
+                    MLShapedArray<Float32>(concatenating: [$0, $0], alongAxis: 0)
+                }
+                // Concat mask in case we are doing inpainting
+                if let (mask, maskedImage) = inpaintingLatents {
+                    latentUnetInput = latentUnetInput.map {
+                        MLShapedArray<Float32>(concatenating: [$0, mask, maskedImage], alongAxis: 1)
+                    }
                 }
             }
 
@@ -178,7 +193,7 @@ public class StableDiffusionPipeline: ResourceManaging {
                 hiddenStates: hiddenStates
             )
 
-            noise = performGuidance(noise, guidanceScale: input.guidanceScale)
+            noise = performGuidance(noise, guidanceScale: input.guidanceScale, imageGuidanceScale: input.imageGuidanceScale)
 
             // Have the scheduler compute the previous (t-1) latent
             // sample given the predicted noise and current sample
@@ -218,9 +233,9 @@ public class StableDiffusionPipeline: ResourceManaging {
     func generateLatentSamples(_ count: Int, input: SampleInput, random: inout NumPyRandomSource, scheduler: Scheduler) throws -> [MLShapedArray<Float32>] {
         var sampleShape = unet.latentSampleShape
         sampleShape[0] = 1
-        // Latent shape for inpainting
-        if input.inpaintMask != nil {
-            sampleShape[1] -= 5
+        // Latent shape for inpainting or pix2pix
+        if input.inpaintMask != nil || input.imageGuidanceScale != nil {
+            sampleShape[1] = 4
         }
         
         let stdev = scheduler.initNoiseSigma
@@ -239,6 +254,18 @@ public class StableDiffusionPipeline: ResourceManaging {
         }
         
         return samples
+    }
+    
+    func generateImageLatent(_ count: Int, input: SampleInput, random: inout NumPyRandomSource, scheduler: Scheduler) throws -> MLShapedArray<Float32>? {
+        guard let image = input.initImage, input.imageGuidanceScale != nil else { return nil }
+        guard let encoder = encoder else {
+            fatalError("Tried to generate image variations without an Encoder")
+        }
+        let latent = try encoder.encode(image, scaleFactor: 1, random: { mean, std in
+            Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
+        })
+        let zeroLatent = MLShapedArray<Float32>(repeating: 0, shape: latent.shape)
+        return MLShapedArray<Float32>(concatenating: [latent, latent, zeroLatent], alongAxis: 0)
     }
     
     func prepareMaskLatents(input: SampleInput, random: inout NumPyRandomSource) throws -> (MLShapedArray<Float32>, MLShapedArray<Float32>)? {
@@ -285,10 +312,19 @@ public class StableDiffusionPipeline: ResourceManaging {
         }
 
         // Convert to Unet hidden state representation
-        let concatEmbedding = MLShapedArray<Float32>(
-            concatenating: [blankEmbedding, promptEmbedding],
-            alongAxis: 0
-        )
+        let concatEmbedding: MLShapedArray<Float32>
+        if input.imageGuidanceScale != nil {
+            // pix2pix has two negative embeddings, and unlike in other pipelines latents are ordered [prompt_embeds, negative_prompt_embeds, negative_prompt_embeds]
+            concatEmbedding = MLShapedArray<Float32>(
+                concatenating: [promptEmbedding, blankEmbedding, blankEmbedding],
+                alongAxis: 0
+            )
+        } else {
+            concatEmbedding = MLShapedArray<Float32>(
+                concatenating: [blankEmbedding, promptEmbedding],
+                alongAxis: 0
+            )
+        }
         let hiddenStates = toHiddenStates(concatEmbedding)
         
         lastInput = input
@@ -313,20 +349,36 @@ public class StableDiffusionPipeline: ResourceManaging {
         return states
     }
 
-    func performGuidance(_ noise: [MLShapedArray<Float32>], guidanceScale: Float) -> [MLShapedArray<Float32>] {
-        noise.map { performGuidance($0, guidanceScale: guidanceScale) }
+    func performGuidance(_ noise: [MLShapedArray<Float32>], guidanceScale: Float, imageGuidanceScale: Float?) -> [MLShapedArray<Float32>] {
+        noise.map { performGuidance($0, guidanceScale: guidanceScale, imageGuidanceScale: imageGuidanceScale) }
     }
 
-    func performGuidance(_ noise: MLShapedArray<Float32>, guidanceScale: Float) -> MLShapedArray<Float32> {
+    func performGuidance(_ noise: MLShapedArray<Float32>, guidanceScale: Float, imageGuidanceScale: Float?) -> MLShapedArray<Float32> {
+        var resultScalars: [Float]
+        if let imageGuidanceScale {
+            let textNoiseScalars = noise[0].scalars
+            let imageNoiseScalars = noise[1].scalars
+            let blankNoiseScalars = noise[2].scalars
 
-        let blankNoiseScalars = noise[0].scalars
-        let textNoiseScalars = noise[1].scalars
+            resultScalars = blankNoiseScalars
 
-        var resultScalars = blankNoiseScalars
+            for i in 0..<resultScalars.count {
+                // unconditioned + guidance*(text - image) + imageGuidance*(image - unconditioned)
+                resultScalars[i] += (
+                    guidanceScale*(textNoiseScalars[i]-imageNoiseScalars[i]) +
+                    imageGuidanceScale*(imageNoiseScalars[i]-blankNoiseScalars[i])
+                )
+            }
+        } else {
+            let blankNoiseScalars = noise[0].scalars
+            let textNoiseScalars = noise[1].scalars
 
-        for i in 0..<resultScalars.count {
-            // unconditioned + guidance*(text - unconditioned)
-            resultScalars[i] += guidanceScale*(textNoiseScalars[i]-blankNoiseScalars[i])
+            resultScalars = blankNoiseScalars
+
+            for i in 0..<resultScalars.count {
+                // unconditioned + guidance*(text - unconditioned)
+                resultScalars[i] += guidanceScale*(textNoiseScalars[i]-blankNoiseScalars[i])
+            }
         }
 
         var shape = noise.shape

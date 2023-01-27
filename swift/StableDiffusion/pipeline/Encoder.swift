@@ -69,15 +69,23 @@ public struct Encoder: ResourceManaging {
     ///  - Parameters:
     ///    - image: Input image
     ///  - Returns: Latent samples to decode
-    public func encode(_ image: CGImage, random: ((Float32, Float32) -> Float32)) throws -> MLShapedArray<Float32> {
+    public func encode(
+        _ image: CGImage,
+        scaleFactor: Float32 = 0.18215,
+        random: ((Float32, Float32) -> Float32)
+    ) throws -> MLShapedArray<Float32> {
         let width: Int = inputImageShape[3]
         let height: Int = inputImageShape[2]
         let resizedImage = resizeImage(image, size: CGSize(width: width, height: height))
         let imageData = fromRGBCGImage(resizedImage)
-        return try encode(imageData, random: random)
+        return try encode(imageData, scaleFactor: scaleFactor, random: random)
     }
     
-    public func encode(_ imageData: MLShapedArray<Float32>, random: ((Float32, Float32) -> Float32)) throws -> MLShapedArray<Float32> {
+    public func encode(
+        _ imageData: MLShapedArray<Float32>,
+        scaleFactor: Float32 = 0.18215,
+        random: ((Float32, Float32) -> Float32)
+    ) throws -> MLShapedArray<Float32> {
         let dict = [inputName: MLMultiArray(imageData)]
         let input = try MLDictionaryFeatureProvider(dictionary: dict)
         
@@ -105,7 +113,7 @@ public struct Encoder: ResourceManaging {
         
         // Reference pipeline scales the latent after encoding
         let latentScaled = MLShapedArray<Float32>(
-            scalars: latent.scalars.map { $0 * 0.18215 },
+            scalars: latent.scalars.map { $0 * scaleFactor },
             shape: [1] + latent.shape
         )
 

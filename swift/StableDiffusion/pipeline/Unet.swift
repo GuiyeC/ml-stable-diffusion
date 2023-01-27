@@ -50,17 +50,18 @@ public struct Unet: ResourceManaging {
     }
 
     /// Pre-warm resources
-    public func prewarmResources() throws -> Bool {
+    public func prewarmResources() throws -> (Bool, Bool) {
         // Override default to pre-warm each model
         let model = models.first
         try model?.loadResources()
         let canInpaint = canInpaint
+        let takesInstructions = takesInstructions
         model?.unloadResources()
         for model in models.dropFirst() {
             try model.loadResources()
             model.unloadResources()
         }
-        return canInpaint
+        return (canInpaint, takesInstructions)
     }
 
     var latentSampleDescription: MLFeatureDescription {
@@ -74,8 +75,23 @@ public struct Unet: ResourceManaging {
         latentSampleDescription.multiArrayConstraint!.shape.map { $0.intValue }
     }
     
+    var timestepDescription: MLFeatureDescription {
+        try! models.first!.perform { model in
+            model.modelDescription.inputDescriptionsByName["timestep"]!
+        }
+    }
+    
+    /// The expected shape of the models timestemp input
+    public var timestepShape: [Int] {
+        timestepDescription.multiArrayConstraint!.shape.map { $0.intValue }
+    }
+    
     public var canInpaint: Bool {
         latentSampleShape[1] == 9
+    }
+    
+    public var takesInstructions: Bool {
+        latentSampleShape[1] == 12
     }
 
     /// Batch prediction noise from latent samples
@@ -92,7 +108,7 @@ public struct Unet: ResourceManaging {
     ) throws -> [MLShapedArray<Float32>] {
 
         // Match time step batch dimension to the model / latent samples
-        let t = MLShapedArray<Float32>(scalars:[Float(timeStep), Float(timeStep)],shape:[2])
+        let t = MLShapedArray<Float32>(repeating: Float32(timeStep), shape: timestepShape)
 
         // Form batch input to model
         let inputs = try latents.map {
