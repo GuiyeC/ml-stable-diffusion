@@ -91,7 +91,7 @@ public struct Unet: ResourceManaging {
     }
     
     public var takesInstructions: Bool {
-        latentSampleShape[1] == 12
+        timestepShape[0] == 3
     }
 
     /// Batch prediction noise from latent samples
