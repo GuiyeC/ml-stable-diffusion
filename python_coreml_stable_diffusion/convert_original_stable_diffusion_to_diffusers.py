@@ -650,7 +650,10 @@ def load_from_ckpt(checkpoint_path, original_config_file, scheduler_type="pndm",
 
     original_config = OmegaConf.load(original_config_file)
 
-    checkpoint = torch.load(checkpoint_path)
+    if torch.cuda.is_available():
+        checkpoint = torch.load(checkpoint_path)
+    else:
+        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
     if "state_dict" in checkpoint:
         checkpoint = checkpoint["state_dict"]
 
