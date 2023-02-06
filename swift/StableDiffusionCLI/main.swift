@@ -51,7 +51,7 @@ struct StableDiffusionSample: ParsableCommand {
     var outputPath: String = "./"
 
     @Option(help: "Random seed")
-    var seed: Int = Int.random(in: (0..<Int(UInt32.max)))
+    var seed: UInt32 = UInt32.random(in: (0..<UInt32.max))
 
     @Option(help: "Compute units to load model with {all,cpuOnly,cpuAndGPU,cpuAndNeuralEngine}")
     var computeUnits: ComputeUnits = .all
