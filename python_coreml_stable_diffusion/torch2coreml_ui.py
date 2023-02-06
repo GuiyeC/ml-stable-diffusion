@@ -222,6 +222,8 @@ if __name__ == "__main__":
                 return
         
         model_version = version_entry.get().strip()
+        if not model_version:
+            model_version = "CompVis/stable-diffusion-v1-4"
         if ckpt_location:
             model_version = os.path.basename(os.path.normpath(ckpt_location))
             # remove extension
