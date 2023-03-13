@@ -88,7 +88,7 @@ def _load_mlpackage(submodule_name, mlpackages_dir, model_version,
     """
     logger.info(f"Loading {submodule_name} mlpackage")
 
-    fname = f"Stable_Diffusion_version_{model_version}_{submodule_name}.mlpackage".replace(
+    fname = f"{model_version}_{submodule_name}.mlpackage".replace(
         "/", "_")
     mlpackage_path = os.path.join(mlpackages_dir, fname)
 

@@ -24,6 +24,8 @@ tmp_ret = collect_all('omegaconf')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('pytorch_lightning')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('safetensors')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 block_cipher = None
 
@@ -74,8 +76,8 @@ app = BUNDLE(
     bundle_identifier='com.guiyec.GuernikaModelConverter',
     info_plist={
         'CFBundleDisplayName': 'Guernika Model Converter',
-        'CFBundleVersion': '1.5.0',
-        'CFBundleShortVersionString': '1.5.0',
+        'CFBundleVersion': '2.0.0',
+        'CFBundleShortVersionString': '2.0.0',
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
         'NSRequiresAquaSystemAppearance': 'No',

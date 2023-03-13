@@ -3,3 +3,5 @@ diffusers[torch]
 torch
 transformers
 scipy
+OmegaConf
+safetensors
