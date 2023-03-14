@@ -23,12 +23,15 @@ public class StableDiffusionPipeline: ResourceManaging {
 
     /// Model to generate embeddings for tokenized input text
     var textEncoder: TextEncoder
-
-    /// Model used to predict noise residuals given an input, diffusion time step, and conditional embedding
-    var unet: Unet
     
     /// Model used to generate initial image for latent diffusion process
     var encoder: Encoder? = nil
+    
+    /// Model used to control diffusion models by adding extra conditions
+    public var controlNet: ControlNet? = nil
+    
+    /// Model used to predict noise residuals given an input, diffusion time step, and conditional embedding
+    var unet: Unet
     
     /// Model used to generate final image from latent diffusion process
     var decoder: Decoder
@@ -59,8 +62,14 @@ public class StableDiffusionPipeline: ResourceManaging {
     
     public var takesInstructions: Bool = false
     
+    public var supportsControlNet: Bool = false
+    
     /// Expected encoder input size
     public var expectedInputSize: CGSize?
+    
+    public var configuration: MLModelConfiguration {
+        textEncoder.model.configuration
+    }
 
     /// Creates a pipeline using the specified models and tokenizer
     ///
@@ -73,15 +82,15 @@ public class StableDiffusionPipeline: ResourceManaging {
     /// - Returns: Pipeline ready for image generation
     public init(
         textEncoder: TextEncoder,
-        unet: Unet,
         encoder: Encoder? = nil,
+        unet: Unet,
         decoder: Decoder,
         safetyChecker: SafetyChecker? = nil,
         reduceMemory: Bool = false
     ) {
         self.textEncoder = textEncoder
-        self.unet = unet
         self.encoder = encoder
+        self.unet = unet
         self.decoder = decoder
         self.safetyChecker = safetyChecker
         self.reduceMemory = reduceMemory
@@ -101,6 +110,7 @@ public class StableDiffusionPipeline: ResourceManaging {
             try unet.loadResources()
             canInpaint = unet.canInpaint && encoder != nil
             takesInstructions = unet.takesInstructions && encoder != nil
+            supportsControlNet = unet.supportsControlNet
             try decoder.loadResources()
             try safetyChecker?.loadResources()
         }
@@ -119,9 +129,10 @@ public class StableDiffusionPipeline: ResourceManaging {
     public func prewarmResources() throws {
         try textEncoder.prewarmResources()
         expectedInputSize = try encoder?.prewarmResources()
-        let (canInpaint, takesInstructions) = try unet.prewarmResources()
+        let (canInpaint, takesInstructions, supportsControlNet) = try unet.prewarmResources()
         self.canInpaint = canInpaint && encoder != nil
         self.takesInstructions = takesInstructions && encoder != nil
+        self.supportsControlNet = supportsControlNet
         try decoder.prewarmResources()
         try safetyChecker?.prewarmResources()
     }
@@ -157,6 +168,7 @@ public class StableDiffusionPipeline: ResourceManaging {
         // Generate random latent samples from specified seed
         var random = NumPyRandomSource(seed: input.seed)
         var latents = try generateLatentSamples(imageCount, input: input, random: &random, scheduler: scheduler[0])
+        // Prepare image latent only for instructions
         let imageLatent = try generateImageLatent(imageCount, input: input, random: &random, scheduler: scheduler[0])
         // Prepare mask only for inpainting
         let inpaintingLatents = try prepareMaskLatents(input: input, random: &random)
@@ -167,6 +179,7 @@ public class StableDiffusionPipeline: ResourceManaging {
             // and input to the Unet noise prediction model
             var latentUnetInput: [MLShapedArray<Float32>]
             if let imageLatent {
+                // Instructions model
                 latentUnetInput = latents.map {
                     MLShapedArray<Float32>(concatenating: [$0, $0, $0], alongAxis: 0)
                 }
@@ -184,11 +197,18 @@ public class StableDiffusionPipeline: ResourceManaging {
                     }
                 }
             }
+            
+            let additionalResiduals = try controlNet?.predictResiduals(
+                latents: latentUnetInput,
+                timeStep: t,
+                hiddenStates: hiddenStates
+            )
 
             // Predict noise residuals from latent samples
             // and current time step conditioned on hidden states
             var noise = try unet.predictNoise(
                 latents: latentUnetInput,
+                additionalResiduals: additionalResiduals,
                 timeStep: t,
                 hiddenStates: hiddenStates
             )
@@ -273,9 +293,9 @@ public class StableDiffusionPipeline: ResourceManaging {
         guard let encoder = encoder else {
             fatalError("Tried to inpaint without an Encoder")
         }
-        var imageData = encoder.fromRGBCGImage(image)
+        var imageData = image.toMLShapeArray()
         // This is reversed because: image * (mask < 0.5)
-        let maskDataScalars = encoder.alphaFromRGBCGImage(mask).scalars.map { 1 - $0 }
+        let maskDataScalars = mask.toAlphaMLShapeArray().scalars.map { 1 - $0 }
         let maskedImageScalars = imageData.scalars.enumerated().map { index, value in
             value * maskDataScalars[index % maskDataScalars.count]
         }
@@ -286,8 +306,8 @@ public class StableDiffusionPipeline: ResourceManaging {
             Float32(random.nextNormal(mean: Double(mean), stdev: Double(std)))
         })
         
-        let resizedMask = encoder.resizeImage(mask, size: CGSize(width: maskedImageLatent.shape[3], height: maskedImageLatent.shape[2]))
-        var maskData = encoder.alphaFromRGBCGImage(resizedMask)
+        let resizedMask = mask.resize(size: CGSize(width: maskedImageLatent.shape[3], height: maskedImageLatent.shape[2]))
+        var maskData = resizedMask.toAlphaMLShapeArray()
         
         // Expand the latents for classifier-free guidance
         // and input to the Unet noise prediction model
@@ -388,28 +408,27 @@ public class StableDiffusionPipeline: ResourceManaging {
 
     func decodeToImages(_ latents: [MLShapedArray<Float32>],
                         disableSafety: Bool) throws -> [CGImage?] {
-
-
+        
+        
         let images = try decoder.decode(latents)
-
+        
         // If safety is disabled return what was decoded
         if disableSafety {
             return images
         }
-
+        
         // If there is no safety checker return what was decoded
         guard let safetyChecker = safetyChecker else {
             return images
         }
-
+        
         // Otherwise change images which are not safe to nil
         let safeImages = try images.map { image in
             try safetyChecker.isSafe(image) ? image : nil
         }
-
+        
         return safeImages
     }
-
 }
 
 @available(iOS 16.2, macOS 13.1, *)

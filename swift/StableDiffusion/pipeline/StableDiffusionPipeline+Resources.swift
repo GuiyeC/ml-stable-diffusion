@@ -9,10 +9,10 @@ public extension StableDiffusionPipeline {
 
     struct ResourceURLs {
         public let textEncoderURL: URL
+        public let encoderURL: URL
         public let unetURL: URL
         public let unetChunk1URL: URL
         public let unetChunk2URL: URL
-        public let encoderURL: URL
         public let decoderURL: URL
         public let safetyCheckerURL: URL
         public let vocabURL: URL
@@ -20,10 +20,10 @@ public extension StableDiffusionPipeline {
 
         public init(resourcesAt baseURL: URL) {
             textEncoderURL = baseURL.appending(path: "TextEncoder.mlmodelc")
+            encoderURL = baseURL.appending(path: "VAEEncoder.mlmodelc")
             unetURL = baseURL.appending(path: "Unet.mlmodelc")
             unetChunk1URL = baseURL.appending(path: "UnetChunk1.mlmodelc")
             unetChunk2URL = baseURL.appending(path: "UnetChunk2.mlmodelc")
-            encoderURL = baseURL.appending(path: "VAEEncoder.mlmodelc")
             decoderURL = baseURL.appending(path: "VAEDecoder.mlmodelc")
             safetyCheckerURL = baseURL.appending(path: "SafetyChecker.mlmodelc")
             vocabURL = baseURL.appending(path: "vocab.json")
@@ -55,8 +55,13 @@ public extension StableDiffusionPipeline {
         let textEncoder = TextEncoder(tokenizer: tokenizer,
                                       modelAt: urls.textEncoderURL,
                                       configuration: config)
-
-
+        
+        // Optional image encoder
+        var encoder: Encoder? = nil
+        if FileManager.default.fileExists(atPath: urls.encoderURL.path) {
+            encoder = Encoder(modelAt: urls.encoderURL, configuration: config)
+        }
+        
         // Unet model
         let unet: Unet
         if FileManager.default.fileExists(atPath: urls.unetChunk1URL.path) &&
@@ -65,12 +70,6 @@ public extension StableDiffusionPipeline {
                         configuration: config)
         } else {
             unet = Unet(modelAt: urls.unetURL, configuration: config)
-        }
-        
-        // Optional image encoder
-        var encoder: Encoder? = nil
-        if FileManager.default.fileExists(atPath: urls.encoderURL.path) {
-            encoder = Encoder(modelAt: urls.encoderURL, configuration: config)
         }
         
         // Image Decoder
@@ -85,8 +84,8 @@ public extension StableDiffusionPipeline {
 
         // Construct pipeline
         self.init(textEncoder: textEncoder,
-                  unet: unet,
                   encoder: encoder,
+                  unet: unet,
                   decoder: decoder,
                   safetyChecker: safetyChecker,
                   reduceMemory: reduceMemory)
