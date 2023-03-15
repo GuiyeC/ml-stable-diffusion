@@ -1205,9 +1205,15 @@ def check_output_size(pipe, args):
         raise RuntimeError(f"Invalid output height. Must be divisible by {vae_scale_factor}")
     if args.output_w and (args.output_w % vae_scale_factor) != 0:
         raise RuntimeError(f"Invalid output width. Must be divisible by {vae_scale_factor}")
-        
+            
+    if not args.output_h and not args.output_w and pipe.vae.config.sample_size < 512:
+        # set minimum size
+        args.output_h = 512
+        args.output_w = 512
+    
     height = args.output_h or pipe.vae.config.sample_size
     width = args.output_w or pipe.vae.config.sample_size
+    
     logger.info(f"Output size will be {width}x{height}")
 
 def main(args):

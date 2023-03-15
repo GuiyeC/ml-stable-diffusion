@@ -345,6 +345,8 @@ if __name__ == "__main__":
         convert_encoder_check["state"] = DISABLED if is_converting else NORMAL
         convert_decoder_check["state"] = DISABLED if is_converting else NORMAL
         convert_safety_checker_check["state"] = DISABLED if is_converting else NORMAL
+        select_none_button["state"] = DISABLED if is_converting else NORMAL
+        select_all_button["state"] = DISABLED if is_converting else NORMAL
                                 
         controlnet_version_entry["state"] = DISABLED if is_converting else NORMAL
         width_entry["state"] = DISABLED if is_converting else NORMAL
