@@ -218,7 +218,7 @@ extension MLShapedArray where ArrayLiteralElement == Float32 {
     }
 }
 
-@available(macOS 13.1, *)
+@available(iOS 16.2, macOS 13.1, *)
 extension ControlNet.Info: Decodable {
     enum CodingKeys: String, CodingKey {
         case id = "identifier"

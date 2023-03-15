@@ -296,7 +296,7 @@ extension MLBatchProvider {
     }
 }
 
-@available(macOS 13.1, *)
+@available(iOS 16.2, macOS 13.1, *)
 extension Unet.Info: Decodable {
     enum CodingKeys: String, CodingKey {
         case id = "identifier"
